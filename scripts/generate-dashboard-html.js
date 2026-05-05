@@ -507,9 +507,7 @@ function buildHtml(payload) {
   const riskTypeOptions = payload.riskTypeBreakdown
     .map(r => `<option value="${r.typeKey.replace(/"/g, "&quot;")}">${r.typeKey} (${r.count})</option>`)
     .join("\n          ");
-  const chartScript = INLINE_LIBS && CHARTJS_INLINE
-    ? `<script>${CHARTJS_INLINE.replace(/<\/script>/gi, "<\\/script>")}<\/script>`
-    : `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"><\/script>`;
+  const chartScript = ''; // Chart.js loaded lazily after first paint
   const plotlyScript = ''; // Plotly loaded lazily on first Gantt/Plan tab open
 
   return `<!DOCTYPE html>
@@ -1255,6 +1253,29 @@ function ensurePlotly() {
   return _plotlyPromise;
 }
 
+// ── Chart.js lazy loader ────────────────────────────────────────────────────
+let _chartPromise = null;
+function ensureChart() {
+  if (window.Chart) return Promise.resolve();
+  if (_chartPromise) return _chartPromise;
+  _chartPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return _chartPromise;
+}
+
+function renderStatusChart() {
+  if (!window.Chart) return;
+  const canvas = document.getElementById("statusChart");
+  if (!canvas) return;
+  const statusColors = ['#7b8cff','#5aa9e6','#d85b72','#c7922a','#2f8f6b','#99a8b8'];
+  new Chart(canvas,{type:"doughnut",data:{labels:DATA.statusBreakdown.map(x=>x.s),datasets:[{data:DATA.statusBreakdown.map(x=>x.c),backgroundColor:DATA.statusBreakdown.map((_,i)=>statusColors[i%statusColors.length]),borderColor:'#ffffff',borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{color:"#5f7185",font:{size:10},boxWidth:10,padding:6}}}}});
+}
+
 // ── Tab switching ──────────────────────────────────────────────────────────
 function switchTab(tab) {
   const isGantt = tab === "gantt";
@@ -1915,8 +1936,12 @@ async function init() {
     el.innerHTML = \`<span class="val">\${esc(String(k.val))}</span><span class="lbl">\${esc(k.label)}</span>\`;
     strip.appendChild(el);
   });
-  const statusColors = ['#7b8cff','#5aa9e6','#d85b72','#c7922a','#2f8f6b','#99a8b8'];
-  new Chart(document.getElementById("statusChart"),{type:"doughnut",data:{labels:DATA.statusBreakdown.map(x=>x.s),datasets:[{data:DATA.statusBreakdown.map(x=>x.c),backgroundColor:DATA.statusBreakdown.map((_,i)=>statusColors[i%statusColors.length]),borderColor:'#ffffff',borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{color:"#5f7185",font:{size:10},boxWidth:10,padding:6}}}}});
+  scheduleNonBlocking(() => {
+    ensureChart().then(() => renderStatusChart()).catch(() => {
+      const c = document.getElementById("statusChart");
+      if (c && c.parentElement) c.parentElement.innerHTML = '<div style="font-size:11px;color:var(--text2);padding:10px">Status chart unavailable (network load issue).</div>';
+    });
+  });
 
   // Stage 2: milestones
   stageProgress(2, TOTAL);
