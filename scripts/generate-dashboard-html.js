@@ -130,6 +130,135 @@ function copilotActions(rec, linkedTasks) {
   ];
 }
 
+function fmtIso(d) {
+  if (!d) return "(date missing)";
+  return String(d).slice(0, 10);
+}
+
+function rankLinkedTask(t) {
+  if (!t) return -1;
+  let score = 0;
+  if (t.isSlipped) score += 40;
+  if (t.isOverdueStart) score += 25;
+  if (t.isDue14) score += 15;
+  if (t.pct < 100) score += 10;
+  if ((t.sucCount || 0) > 0) score += 8;
+  if ((t.predCount || 0) > 0) score += 5;
+  if (t.milestone) score += 6;
+  score += Math.min(10, t.slipDays || 0);
+  return score;
+}
+
+function pickPrimaryTask(linkedTasks) {
+  if (!linkedTasks.length) return null;
+  return [...linkedTasks].sort((a, b) => rankLinkedTask(b) - rankLinkedTask(a))[0] || null;
+}
+
+function pickImpactedMilestone(task, taskById) {
+  if (!task || !taskById) return null;
+  const successors = (task.sucIds || []).map(id => taskById.get(id)).filter(Boolean);
+  const directMilestone = successors.find(s => s.milestone) || null;
+  if (directMilestone) return directMilestone;
+  return successors
+    .filter(s => s.finish || s.start)
+    .sort((a, b) => String(a.finish || a.start).localeCompare(String(b.finish || b.start)))[0] || null;
+}
+
+function specificIssueNarrative(rec, linkedTasks, taskById) {
+  const t = pickPrimaryTask(linkedTasks);
+  if (!t) return simpleSentence(rec.name);
+
+  const startDate = fmtIso(t.start);
+  const finishDate = fmtIso(t.finish);
+  const milestone = pickImpactedMilestone(t, taskById);
+  const ws = t.workstream || "This workstream";
+  const status = t.pct >= 100 ? "is complete" : `is only ${t.pct || 0}% complete`;
+
+  let sentence = `${ws} is scheduled to start on ${startDate}, but task \"${simpleSentence(t.name)}\" ${status} and is planned to finish ${finishDate}.`;
+  if (milestone) {
+    sentence += ` This creates a scheduling conflict and impacts milestone \"${simpleSentence(milestone.name)}\" (${fmtIso(milestone.finish || milestone.start)}).`;
+  } else {
+    sentence += " This creates a scheduling conflict for downstream activities.";
+  }
+  return sentence;
+}
+
+function specificImpactNarrative(rec, linkedTasks, taskById) {
+  const t = pickPrimaryTask(linkedTasks);
+  if (!t) return copilotImpact(rec.severity, linkedTasks.length, rec.type);
+
+  const milestone = pickImpactedMilestone(t, taskById);
+  const slip = t.slipDays != null ? ` by approximately ${t.slipDays} day(s)` : "";
+  const predTxt = (t.predCount || 0) > 0 ? `${t.predCount} predecessor(s)` : "no predecessor constraints";
+  const sucTxt = (t.sucCount || 0) > 0 ? `${t.sucCount} successor(s)` : "limited downstream links";
+
+  if (milestone) {
+    return `Because \"${simpleSentence(t.name)}\" is not complete, milestone \"${simpleSentence(milestone.name)}\" can be pushed out${slip}. Dependency profile: ${predTxt}, ${sucTxt}.`;
+  }
+  return `Because \"${simpleSentence(t.name)}\" is not complete, dependent schedule dates are at risk${slip}. Dependency profile: ${predTxt}, ${sucTxt}.`;
+}
+
+function specificActions(rec, linkedTasks, taskById) {
+  const t = pickPrimaryTask(linkedTasks);
+  if (!t) return copilotActions(rec, linkedTasks);
+
+  const milestone = pickImpactedMilestone(t, taskById);
+  const baseline = fmtIso(t.baselineFinish || t.finish || t.start);
+  const currentFinish = fmtIso(t.finish || t.start);
+  const finishTarget = t.baselineFinish ? fmtIso(t.baselineFinish) : "baseline target";
+  const actions = [];
+
+  if ((t.predCount || 0) > 0) {
+    actions.push(`Review predecessor links for \"${simpleSentence(t.name)}\": remove or relax any non-driving predecessor causing late start (governance approval required).`);
+  } else {
+    actions.push(`Resequence \"${simpleSentence(t.name)}\" to start earlier than ${fmtIso(t.start)} by pulling preparatory steps forward.`);
+  }
+
+  actions.push(`Change duration for \"${simpleSentence(t.name)}\" by fast-tracking: compress from current plan ending ${currentFinish} toward ${finishTarget} (add temporary owner support / parallelize checks).`);
+
+  if (milestone) {
+    actions.push(`Protect milestone \"${simpleSentence(milestone.name)}\" (${fmtIso(milestone.finish || milestone.start)}): run a daily dependency check and re-baseline only if recovery to ${baseline} is not feasible.`);
+  } else {
+    actions.push(`Run a downstream impact check on ${t.sucCount || 0} successor task(s) and update handoff dates before end of day.`);
+  }
+
+  return actions;
+}
+
+function normalizeToken(s) {
+  return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function inferLinkedTasksFromText(rec, tasks, workstreamHints) {
+  const seed = normalizeToken(`${rec.name} ${rec.category} ${rec.type}`);
+  let pool = tasks.filter(t => t.pct < 100);
+
+  const matchedHints = workstreamHints.filter(ws => {
+    const n = normalizeToken(ws);
+    return n && seed.includes(n);
+  });
+  if (matchedHints.length) {
+    pool = pool.filter(t => matchedHints.some(ws => String(t.workstream || "").toLowerCase().includes(String(ws).toLowerCase())));
+  }
+
+  if (!pool.length) return [];
+
+  const keyTaskRegex = /(post load validation|pre load validation|simulate load|load file|error and defect mitigation|load)/i;
+  const scored = pool.map(t => {
+    let score = 0;
+    if (t.isSlipped) score += 30;
+    if (t.isOverdueStart) score += 20;
+    if (t.isDue14) score += 10;
+    if (keyTaskRegex.test(t.name || "")) score += 12;
+    if ((t.sucCount || 0) > 0) score += 6;
+    if ((t.predCount || 0) > 0) score += 4;
+    score += Math.min(10, t.slipDays || 0);
+    return { t, score };
+  }).sort((a, b) => b.score - a.score || (b.t.slipDays || 0) - (a.t.slipDays || 0));
+
+  return scored.slice(0, 3).map(x => x.t);
+}
+
 function daysDiff(a, b) {
   if (!a || !b) return null;
   const da = new Date(a), db = new Date(b);
@@ -288,13 +417,19 @@ async function main() {
   const healthLabel = healthRed ? "🔴 Red" : healthAmber ? "🟠 Amber" : "🟢 Green";
 
   const taskById = new Map(tasks.map(t => [t.id, t]));
+  const workstreamHints = [...new Set(tasks.map(t => t.workstream).filter(Boolean))]
+    .flatMap(ws => String(ws).split(/[;|,/]/).map(x => x.trim()).filter(Boolean))
+    .filter(ws => ws.length <= 20);
   const actionItems = riskRecords
     .map(r => {
-      const linkedTasks = r.linkedTaskIds.map(id => taskById.get(id)).filter(Boolean);
+      const explicitLinkedTasks = r.linkedTaskIds.map(id => taskById.get(id)).filter(Boolean);
+      const linkedTasks = explicitLinkedTasks.length
+        ? explicitLinkedTasks
+        : inferLinkedTasksFromText(r, tasks, workstreamHints);
       const aiCategory = copilotCategory(r);
-      const plainIssue = simpleSentence(r.name);
-      const plainImpact = copilotImpact(r.severity, linkedTasks.length, r.type);
-      const actions = copilotActions(r, linkedTasks);
+      const plainIssue = specificIssueNarrative(r, linkedTasks, taskById);
+      const plainImpact = specificImpactNarrative(r, linkedTasks, taskById);
+      const actions = specificActions(r, linkedTasks, taskById);
       const milestoneHits = linkedTasks.filter(t => t.milestone).slice(0, 3);
       const milestoneOwners = milestoneHits.map(t => ({ name: t.name, assignedTo: t.assignedTo, finish: t.finish || t.start }));
       return {
