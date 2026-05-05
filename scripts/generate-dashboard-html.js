@@ -515,6 +515,10 @@ async function main() {
   const dataFile = path.join(__dirname, "..", "dashboard-data.json");
   fs.writeFileSync(dataFile, JSON.stringify(fullTaskPayload), "utf8");
   console.log(`Dashboard data written to: ${dataFile}`);
+  const newlineCount = (html.match(/\n/g) || []).length;
+  console.log(`\n[DEBUG] HTML has ${newlineCount} newlines before write`);
+  console.log(`[DEBUG] HTML size: ${html.length} bytes`);
+  console.log(`[DEBUG] First 100 chars: ${html.substring(0, 100)}`);
   fs.writeFileSync(OUT_FILE, html, "utf8");
   console.log(`\nDashboard written to: ${OUT_FILE}`);
   console.log(`Open it in a browser, then embed the hosted URL in Notion via /embed`);
@@ -1553,7 +1557,7 @@ function boardNodeRow(node) {
     'Finish: ' + fmt(node.task.finish),
     'Progress: ' + (node.task.pct || 0) + '%',
     'Pred: ' + (node.task.predCount || 0) + ' · Suc: ' + (node.task.sucCount || 0)
-  ].join('\n');
+  ].join('\\n');
   const drivingCls = driving ? ' driving' : '';
   const activeCls = isSelected ? ' active' : '';
   const row = '<div class="board-node branch ' + cls + drivingCls + activeCls + '" style="margin-left:' + pad + 'px">' +
