@@ -618,11 +618,16 @@ ${plotlyScript}
   .board-item:hover{border-color:var(--accent);}
   .board-item.active{border-color:var(--blue);background:#eef2ff;}
   .board-tree{overflow:auto;flex:1;border:1px solid var(--border);border-radius:10px;padding:8px;background:var(--surface);}
-  .board-node{padding:5px 6px;border-radius:6px;margin:2px 0;border:1px solid transparent;}
+  .board-node{position:relative;padding:5px 6px;border-radius:6px;margin:2px 0;border:1px solid transparent;}
+  .board-node.branch::before{content:"";position:absolute;left:-10px;top:-8px;bottom:-8px;border-left:1px solid #cbd5e1;}
+  .board-node.branch::after{content:"";position:absolute;left:-10px;top:13px;width:10px;border-top:1px solid #cbd5e1;}
   .board-node.root{background:#eef2ff;border-color:#c7d2fe;}
   .board-node.pred{background:#ecfdf5;border-color:#bbf7d0;}
   .board-node.suc{background:#eff6ff;border-color:#bfdbfe;}
   .board-node-meta{font-size:11px;color:var(--text2);margin-top:2px;}
+  .board-node-rel{display:inline-block;font-size:10px;font-weight:700;border-radius:999px;padding:1px 7px;margin-right:6px;vertical-align:middle;}
+  .board-node-rel.pred{background:#dcfce7;color:#166534;}
+  .board-node-rel.suc{background:#dbeafe;color:#1e40af;}
   .board-node-toggle{border:1px solid var(--border);background:var(--surface2);border-radius:4px;cursor:pointer;width:18px;height:18px;line-height:1;font-size:11px;margin-right:6px;}
   @keyframes spin{to{transform:rotate(360deg)}}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
@@ -1175,8 +1180,8 @@ function switchTab(tab) {
   }
 }
 
-function buildBoardSubtree(task, relation, depth, maxDepth, trail, nodeMap, idRef) {
-  const node = { id: ++idRef.value, task, relation, depth, children: [] };
+function buildBoardSubtree(task, relation, depth, maxDepth, trail, nodeMap, idRef, parentTaskId) {
+  const node = { id: ++idRef.value, task, relation, depth, parentTaskId: parentTaskId || null, children: [] };
   nodeMap.set(node.id, node);
   if (depth >= maxDepth) return node;
   const nextIds = relation === 'pred' ? (task.predIds || []) : (task.sucIds || []);
@@ -1187,7 +1192,7 @@ function buildBoardSubtree(task, relation, depth, maxDepth, trail, nodeMap, idRe
     if (trail.has(key)) continue;
     const nextTrail = new Set(trail);
     nextTrail.add(key);
-    node.children.push(buildBoardSubtree(childTask, relation, depth + 1, maxDepth, nextTrail, nodeMap, idRef));
+    node.children.push(buildBoardSubtree(childTask, relation, depth + 1, maxDepth, nextTrail, nodeMap, idRef, task.id));
   }
   return node;
 }
@@ -1219,10 +1224,12 @@ function buildBoardTree(rootTask) {
   let predCandidates = (rootTask.predIds || []).map(pid => {
     const t = taskById.get(pid);
     if (!t) return null;
+    return t;
   }).filter(Boolean);
   let sucCandidates = (rootTask.sucIds || []).map(sid => {
     const t = taskById.get(sid);
     if (!t) return null;
+    return t;
   }).filter(Boolean);
 
   if (boardState.criticalOnly) {
@@ -1233,10 +1240,10 @@ function buildBoardTree(rootTask) {
   }
 
   const predRoots = predCandidates.map(t =>
-    buildBoardSubtree(t, 'pred', 1, 3, new Set(['pred:' + rootTask.id]), nodeMap, idRef)
+    buildBoardSubtree(t, 'pred', 1, 3, new Set(['pred:' + rootTask.id]), nodeMap, idRef, rootTask.id)
   );
   const sucRoots = sucCandidates.map(t =>
-    buildBoardSubtree(t, 'suc', 1, 3, new Set(['suc:' + rootTask.id]), nodeMap, idRef)
+    buildBoardSubtree(t, 'suc', 1, 3, new Set(['suc:' + rootTask.id]), nodeMap, idRef, rootTask.id)
   );
   return { predRoots, sucRoots, nodeMap };
 }
@@ -1249,10 +1256,12 @@ function boardNodeRow(node) {
   const btn = canExpand
     ? '<button class="board-node-toggle" onclick="toggleBoardNode(' + node.id + ')">' + (isOpen ? '−' : '+') + '</button>'
     : '<span style="display:inline-block;width:18px;margin-right:6px"></span>';
-  const row = '<div class="board-node ' + cls + '" style="margin-left:' + pad + 'px">' +
+  const relTag = node.relation === 'pred' ? 'PREDECESSOR' : 'SUCCESSOR';
+  const isMilestone = !!node.task.milestone;
+  const row = '<div class="board-node branch ' + cls + '" style="margin-left:' + pad + 'px">' +
     '<div style="display:flex;align-items:flex-start">' + btn +
-    '<div><div style="font-weight:600">' + esc(trunc(node.task.name, 64)) + '</div>' +
-    '<div class="board-node-meta">UID ' + esc(String(node.task.uid || '—')) + ' · Finish ' + esc(fmt(node.task.finish)) + ' · % ' + esc(String(node.task.pct || 0)) + ' · Pred ' + esc(String(node.task.predCount || 0)) + ' · Suc ' + esc(String(node.task.sucCount || 0)) + '</div></div></div></div>';
+    '<div><div style="font-weight:600"><span class="board-node-rel ' + cls + '">' + relTag + '</span>' + (isMilestone ? '🏁 ' : '') + esc(trunc(node.task.name, 64)) + '</div>' +
+    '<div class="board-node-meta">Lvl ' + esc(String(node.depth)) + ' · UID ' + esc(String(node.task.uid || '—')) + ' · Start ' + esc(fmt(node.task.start)) + ' · Finish ' + esc(fmt(node.task.finish)) + ' · % ' + esc(String(node.task.pct || 0)) + ' · Pred ' + esc(String(node.task.predCount || 0)) + ' · Suc ' + esc(String(node.task.sucCount || 0)) + '</div></div></div></div>';
   if (!canExpand || !isOpen) return row;
   return row + node.children.map(boardNodeRow).join('');
 }
@@ -1275,13 +1284,18 @@ function renderBoardTree() {
 
 function collectBoardTasks() {
   if (!boardState.rootTask) return [];
-  const out = [boardState.rootTask];
+  const out = [{ task: boardState.rootTask, relation: 'ROOT', depth: 0, parentTaskId: null }];
   const seen = new Set([boardState.rootTask.id]);
   if (!boardState.tree) return out;
   for (const node of boardState.tree.nodeMap.values()) {
     if (node?.task && !seen.has(node.task.id)) {
       seen.add(node.task.id);
-      out.push(node.task);
+      out.push({
+        task: node.task,
+        relation: node.relation === 'pred' ? 'PRED' : 'SUC',
+        depth: node.depth || 1,
+        parentTaskId: node.parentTaskId || boardState.rootTask.id
+      });
     }
   }
   return out;
@@ -1289,38 +1303,104 @@ function collectBoardTasks() {
 
 function renderBoardGantt() {
   const host = document.getElementById('boardGantt');
-  const tasks = collectBoardTasks().filter(t => t.start || t.finish);
-  if (!tasks.length) {
+  const nodes = collectBoardTasks().filter(x => x.task && (x.task.start || x.task.finish));
+  if (!nodes.length) {
     host.innerHTML = '<div style="padding:12px;color:var(--text2)">No dated tasks to chart.</div>';
     return;
   }
-  const rows = tasks.map(t => {
-    const rel = t.id === boardState.rootTask.id ? 'ROOT' : ((boardState.rootTask.predIds || []).includes(t.id) ? 'PRED' : 'SUC');
-    return { t, rel };
-  }).sort((a, b) => String(a.t.finish || a.t.start).localeCompare(String(b.t.finish || b.t.start)));
 
-  const minD = new Date(Math.min(...rows.map(r => new Date(r.t.start || r.t.finish).getTime())));
-  const maxD = new Date(Math.max(...rows.map(r => new Date(r.t.finish || r.t.start).getTime())));
+  const relOrder = { ROOT: 0, PRED: 1, SUC: 2 };
+  const rows = nodes.sort((a, b) => {
+    if (relOrder[a.relation] !== relOrder[b.relation]) return relOrder[a.relation] - relOrder[b.relation];
+    if ((a.depth || 0) !== (b.depth || 0)) return (a.depth || 0) - (b.depth || 0);
+    return String(a.task.finish || a.task.start).localeCompare(String(b.task.finish || b.task.start));
+  });
+
+  const minD = new Date(Math.min(...rows.map(r => new Date(r.task.start || r.task.finish).getTime())));
+  const maxD = new Date(Math.max(...rows.map(r => new Date(r.task.finish || r.task.start).getTime())));
   minD.setDate(minD.getDate() - 2);
   maxD.setDate(maxD.getDate() + 10);
 
-  const y = rows.map(r => '[' + r.rel + '] ' + trunc(r.t.name, 46));
-  const base = rows.map(r => r.t.start || r.t.finish);
-  const dur = rows.map(r => Math.max(86400000, new Date(r.t.finish || r.t.start).getTime() - new Date(r.t.start || r.t.finish).getTime() + 86400000));
-  const color = rows.map(r => r.rel === 'ROOT' ? '#4b6bfb' : r.rel === 'PRED' ? '#16a34a' : '#2563eb');
+  const y = rows.map(r => {
+    const indent = ' '.repeat(Math.min(10, (r.depth || 0) * 2));
+    const tag = r.relation === 'ROOT' ? '[ROOT]' : (r.relation === 'PRED' ? '[PRED]' : '[SUC]');
+    const typeTag = r.task.milestone ? '🏁' : '•';
+    return indent + tag + ' ' + typeTag + ' ' + trunc(r.task.name, 44);
+  });
 
-  Plotly.react(host, [{
-    type: 'bar', orientation: 'h', y, base, x: dur,
-    marker: { color },
-    text: rows.map(r => fmtShort(r.t.start || r.t.finish) + ' → ' + fmtShort(r.t.finish || r.t.start)),
-    textposition: 'inside', textfont: { color: '#fff', size: 10 },
-    hovertemplate: rows.map(r => '<b>' + esc(r.t.name) + '</b><br>Relation: ' + r.rel + '<br>Start: ' + fmt(r.t.start) + '<br>Finish: ' + fmt(r.t.finish) + '<br>% Complete: ' + (r.t.pct || 0) + '<br>Owner: ' + esc(r.t.assignedTo || 'Unassigned') + '<extra></extra>')
-  }], {
+  const taskRows = rows.filter(r => !r.task.milestone);
+  const milestoneRows = rows.filter(r => r.task.milestone);
+  const yById = new Map(rows.map((r, i) => [r.task.id, y[i]]));
+
+  const traces = [];
+  if (taskRows.length) {
+    traces.push({
+      type: 'bar',
+      orientation: 'h',
+      y: taskRows.map(r => yById.get(r.task.id)),
+      base: taskRows.map(r => r.task.start || r.task.finish),
+      x: taskRows.map(r => Math.max(86400000, new Date(r.task.finish || r.task.start).getTime() - new Date(r.task.start || r.task.finish).getTime() + 86400000)),
+      marker: {
+        color: taskRows.map(r => r.relation === 'ROOT' ? '#4b6bfb' : r.relation === 'PRED' ? '#16a34a' : '#2563eb')
+      },
+      text: taskRows.map(r => fmtShort(r.task.start || r.task.finish) + ' → ' + fmtShort(r.task.finish || r.task.start)),
+      textposition: 'inside',
+      textfont: { color: '#fff', size: 10 },
+      hovertemplate: taskRows.map(r => '<b>' + esc(r.task.name) + '</b><br>Relation: ' + r.relation + ' · Level ' + (r.depth || 0) + '<br>Type: Task<br>Start: ' + fmt(r.task.start) + '<br>Finish: ' + fmt(r.task.finish) + '<br>% Complete: ' + (r.task.pct || 0) + '<br>Owner: ' + esc(r.task.assignedTo || 'Unassigned') + '<extra></extra>'),
+      showlegend: false
+    });
+  }
+  if (milestoneRows.length) {
+    traces.push({
+      type: 'scatter',
+      mode: 'markers+text',
+      x: milestoneRows.map(r => r.task.finish || r.task.start),
+      y: milestoneRows.map(r => yById.get(r.task.id)),
+      text: milestoneRows.map(r => fmtShort(r.task.finish || r.task.start)),
+      textposition: 'middle right',
+      marker: {
+        size: 12,
+        symbol: 'diamond',
+        color: milestoneRows.map(r => r.relation === 'ROOT' ? '#4b6bfb' : r.relation === 'PRED' ? '#16a34a' : '#2563eb'),
+        line: { width: 1, color: '#1e293b' }
+      },
+      hovertemplate: milestoneRows.map(r => '<b>' + esc(r.task.name) + '</b><br>Relation: ' + r.relation + ' · Level ' + (r.depth || 0) + '<br>Type: Milestone<br>Date: ' + fmt(r.task.finish || r.task.start) + '<extra></extra>'),
+      showlegend: false
+    });
+  }
+
+  const depAnnotations = rows
+    .filter(r => r.parentTaskId && yById.has(r.parentTaskId))
+    .map(r => {
+      const parentTask = taskById.get(r.parentTaskId);
+      if (!parentTask) return null;
+      return {
+        x: r.task.start || r.task.finish,
+        y: yById.get(r.task.id),
+        ax: parentTask.finish || parentTask.start,
+        ay: yById.get(parentTask.id),
+        xref: 'x',
+        yref: 'y',
+        axref: 'x',
+        ayref: 'y',
+        showarrow: true,
+        arrowhead: 2,
+        arrowsize: 1,
+        arrowwidth: 1,
+        arrowcolor: '#94a3b8',
+        opacity: 0.9,
+        text: ''
+      };
+    })
+    .filter(Boolean);
+
+  Plotly.react(host, traces, {
     margin: { l: 280, r: 16, t: 10, b: 36 },
     paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
     height: Math.max(520, rows.length * 26),
     xaxis: { type: 'date', range: [minD.toISOString(), maxD.toISOString()], showgrid: true, gridcolor: '#e7edf4', tickfont: { color: '#5f7185', size: 10 } },
     yaxis: { automargin: true, autorange: 'reversed', tickfont: { color: '#334155', size: 10 } },
+    annotations: depAnnotations,
     showlegend: false
   }, { displayModeBar: false, responsive: true });
 }
