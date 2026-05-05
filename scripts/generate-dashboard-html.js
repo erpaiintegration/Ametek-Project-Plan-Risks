@@ -350,9 +350,7 @@ function buildHtml(payload) {
   const chartScript = INLINE_LIBS && CHARTJS_INLINE
     ? `<script>${CHARTJS_INLINE.replace(/<\/script>/gi, "<\\/script>")}<\/script>`
     : `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"><\/script>`;
-  const plotlyScript = INLINE_LIBS && PLOTLY_INLINE
-    ? `<script>${PLOTLY_INLINE.replace(/<\/script>/gi, "<\\/script>")}<\/script>`
-    : `<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"><\/script>`;
+  const plotlyScript = ''; // Plotly loaded lazily on first Gantt/Plan tab open
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -442,10 +440,17 @@ ${plotlyScript}
   #ganttTip{position:fixed;background:#ffffff;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:11px;pointer-events:none;display:none;z-index:9999;max-width:360px;line-height:1.6;white-space:pre-wrap;color:#0f172a;box-shadow:0 6px 20px rgba(0,0,0,.15);}
   .loading-overlay{position:fixed;inset:0;background:rgba(244,247,251,.96);display:flex;align-items:center;justify-content:center;z-index:10000;transition:opacity .25s ease;}
   .loading-overlay.hide{opacity:0;pointer-events:none;}
-  .loading-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;min-width:300px;box-shadow:var(--shadow);text-align:center;}
-  .loading-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;}
-  .loading-sub{font-size:12px;color:var(--text2);margin-bottom:10px;}
-  .loading-spin{width:24px;height:24px;border:3px solid #d8e2ee;border-top-color:var(--blue);border-radius:50%;margin:0 auto 8px;animation:spin .85s linear infinite;}
+  .loading-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 24px;min-width:340px;box-shadow:var(--shadow);text-align:center;}
+  .loading-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px;}
+  .loading-stages{list-style:none;margin:0 0 14px;padding:0;text-align:left;}
+  .loading-stages li{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);padding:3px 0;transition:color .2s;}
+  .loading-stages li.active{color:var(--blue);font-weight:600;}
+  .loading-stages li.done{color:#2f8f6b;}
+  .loading-stages li .stage-icon{width:16px;text-align:center;flex-shrink:0;}
+  .loading-bar-wrap{height:6px;background:#dde5ef;border-radius:4px;margin-bottom:8px;overflow:hidden;}
+  .loading-bar{height:100%;border-radius:4px;background:var(--blue);transition:width .3s ease;width:0%;}
+  .loading-pct{font-size:11px;color:var(--text2);}
+  .loading-spin-sm{width:14px;height:14px;border:2px solid #d8e2ee;border-top-color:var(--blue);border-radius:50%;display:inline-block;animation:spin .85s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg)}}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
@@ -453,9 +458,16 @@ ${plotlyScript}
 <body>
 <div id="loadingOverlay" class="loading-overlay" aria-live="polite">
   <div class="loading-card">
-    <div class="loading-title">Preparing dashboard…</div>
-    <div class="loading-spin"></div>
-    <div id="loadingSub" class="loading-sub">Loading tasks, charts, and plan explorer.</div>
+    <div class="loading-title">⏳ Preparing dashboard…</div>
+    <ul class="loading-stages" id="loadingStages">
+      <li id="ls0"><span class="stage-icon">⏳</span> Indexing task data</li>
+      <li id="ls1"><span class="stage-icon">⏳</span> Rendering KPIs and status chart</li>
+      <li id="ls2"><span class="stage-icon">⏳</span> Building milestones view</li>
+      <li id="ls3"><span class="stage-icon">⏳</span> Populating risk / issue tiles</li>
+      <li id="ls4"><span class="stage-icon">⏳</span> Rendering task table</li>
+    </ul>
+    <div class="loading-bar-wrap"><div class="loading-bar" id="loadingBar"></div></div>
+    <div class="loading-pct" id="loadingPct">0%</div>
   </div>
 </div>
 <header>
@@ -791,7 +803,7 @@ function renderPlanExplorer() {
       '<td>' +
         '<div style="display:flex;align-items:center;gap:6px;padding-left:' + (r.depth * 14) + 'px">' +
           (canExpand
-            ? '<button onclick="togglePlanNode(\'' + n.id + '\')" style="border:1px solid var(--border);background:var(--surface2);border-radius:4px;width:18px;height:18px;cursor:pointer;font-size:11px;line-height:1">' + (isOpen ? '−' : '+') + '</button>'
+            ? '<button onclick="togglePlanNode(\\\'' + n.id + '\\\')" style="border:1px solid var(--border);background:var(--surface2);border-radius:4px;width:18px;height:18px;cursor:pointer;font-size:11px;line-height:1">' + (isOpen ? '−' : '+') + '</button>'
             : '<span style="display:inline-block;width:18px"></span>') +
           '<span style="font-weight:' + (r.depth <= 1 ? 600 : 500) + '">' + esc(trunc(n.name, 70)) + '</span>' +
         '</div>' +
@@ -887,42 +899,35 @@ function renderMilestoneMini() {
     return;
   }
 
-  const trace = {
-    type: 'scatter',
-    mode: 'markers+text',
-    x: milestones.map(m => m.finish || m.start),
-    y: milestones.map(m => trunc(m.name, 16)),
-    text: milestones.map(m => (m.linkedRisks.length ? '⚠ ' : '◆ ') + trunc(m.assignedTo || 'Unassigned', 10)),
-    textposition: 'middle right',
-    marker: {
-      size: 12,
-      symbol: 'diamond',
-      color: milestones.map(m => m.linkedRisks.length ? '#d85b72' : '#2f8f6b'),
-      line: { width: 1, color: milestones.map(m => m.linkedRisks.length ? '#b43b55' : '#256f54') }
-    },
-    hovertemplate: milestones.map(m => '<b>' + esc(m.name) + '</b><br>Assigned: ' + esc(m.assignedTo || 'Unassigned') + '<br>Date: ' + fmt(m.finish || m.start) + '<extra></extra>')
-  };
-  const layout = {
-    margin: { l: 82, r: 8, t: 8, b: 18 },
-    paper_bgcolor: '#ffffff',
-    plot_bgcolor: '#ffffff',
-    xaxis: {
-      type: 'date',
-      showgrid: true,
-      gridcolor: '#e7edf4',
-      tickfont: { size: 9, color: '#5f7185' },
-      range: [from.toISOString(), to.toISOString()],
-      zeroline: false
-    },
-    yaxis: {
-      automargin: true,
-      tickfont: { size: 9, color: '#334155' },
-      autorange: 'reversed'
-    },
-    showlegend: false,
-    height: 140
-  };
-  Plotly.react(host, [trace], layout, { displayModeBar: false, responsive: true, staticPlot: true });
+  host.innerHTML = '<div style="display:flex;flex-direction:column;gap:5px;padding:4px 2px">' +
+    milestones.map(m => {
+      const hasRisk = m.linkedRisks.length > 0;
+      const icon = hasRisk ? '⚠️' : '🏁';
+      const color = hasRisk ? '#d85b72' : '#2f8f6b';
+      const date = fmt(m.finish || m.start);
+      return '<div style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;background:var(--surface2);border-left:3px solid ' + color + '">' +
+        '<span style="font-size:13px">' + icon + '</span>' +
+        '<span style="font-size:11px;color:var(--text2);white-space:nowrap;min-width:70px">' + esc(date) + '</span>' +
+        '<span style="font-size:12px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(trunc(m.name, 50)) + '</span>' +
+        '<span style="font-size:11px;color:var(--text2);white-space:nowrap">' + esc(trunc(m.assignedTo || 'Unassigned', 18)) + '</span>' +
+        '</div>';
+    }).join('') +
+  '</div>';
+}
+
+// ── Plotly lazy loader ─────────────────────────────────────────────────────
+let _plotlyPromise = null;
+function ensurePlotly() {
+  if (window.Plotly) return Promise.resolve();
+  if (_plotlyPromise) return _plotlyPromise;
+  _plotlyPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return _plotlyPromise;
 }
 
 // ── Tab switching ──────────────────────────────────────────────────────────
@@ -942,12 +947,17 @@ function switchTab(tab) {
   gc.style.display = isGantt ? "flex" : "none";
   const pc = document.getElementById("planContent");
   pc.style.display = isPlan ? "flex" : "none";
-  if (isGantt && !ganttRendered) { renderGantt(); ganttRendered = true; }
+  if (isGantt && !ganttRendered) {
+    gc.innerHTML = '<div style="padding:24px;color:var(--text2);font-size:13px">⏳ Loading Gantt library…</div>';
+    ensurePlotly().then(() => { renderGantt(); ganttRendered = true; });
+  }
   if (isActions) renderActions();
   if (isPlan && !planRendered) {
     renderPlanCalendar();
-    renderPlanExplorer();
-    planRendered = true;
+    ensurePlotly().then(() => {
+      renderPlanExplorer();
+      planRendered = true;
+    });
   }
 }
 
@@ -973,9 +983,38 @@ function renderActions() {
   }).join('');
 }
 
+function yield_() { return new Promise(r => setTimeout(r, 0)); }
+function stageProgress(step, total) {
+  const pct = Math.round((step / total) * 100);
+  const bar = document.getElementById('loadingBar');
+  const pctEl = document.getElementById('loadingPct');
+  if (bar) bar.style.width = pct + '%';
+  if (pctEl) pctEl.textContent = pct + '%';
+  for (let i = 0; i < step; i++) {
+    const el = document.getElementById('ls' + i);
+    if (el) { el.classList.add('done'); el.classList.remove('active'); el.querySelector('.stage-icon').textContent = '✅'; }
+  }
+  if (step < total) {
+    const active = document.getElementById('ls' + step);
+    if (active) { active.classList.add('active'); active.querySelector('.stage-icon').innerHTML = '<span class="loading-spin-sm"></span>'; }
+  }
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
-function init() {
-  setLoadingText('Rendering KPI panels and charts…');
+async function init() {
+  const TOTAL = 5;
+
+  // Stage 0: index
+  stageProgress(0, TOTAL);
+  await yield_();
+  // Update stage 0 label with actual count
+  const ls0 = document.getElementById('ls0');
+  if (ls0) ls0.innerHTML = '<span class="stage-icon"><span class="loading-spin-sm"></span></span> Indexing ' + DATA.tasks.length + ' tasks…';
+  await yield_();
+
+  // Stage 1: KPIs and status chart
+  stageProgress(1, TOTAL);
+  await yield_();
   const m = DATA.metrics;
   document.getElementById("healthBadge").textContent = m.healthLabel;
   document.getElementById("genTime").textContent = "Generated " + new Date(DATA.generatedAt).toLocaleString();
@@ -998,7 +1037,15 @@ function init() {
   });
   const statusColors = ['#7b8cff','#5aa9e6','#d85b72','#c7922a','#2f8f6b','#99a8b8'];
   new Chart(document.getElementById("statusChart"),{type:"doughnut",data:{labels:DATA.statusBreakdown.map(x=>x.s),datasets:[{data:DATA.statusBreakdown.map(x=>x.c),backgroundColor:DATA.statusBreakdown.map((_,i)=>statusColors[i%statusColors.length]),borderColor:'#ffffff',borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{color:"#5f7185",font:{size:10},boxWidth:10,padding:6}}}}});
+
+  // Stage 2: milestones
+  stageProgress(2, TOTAL);
+  await yield_();
   renderMilestoneMini();
+
+  // Stage 3: risk/issue tiles
+  stageProgress(3, TOTAL);
+  await yield_();
   const typeList = document.getElementById("typeList");
   DATA.riskTypeBreakdown.forEach(rt => {
     const tile = document.createElement("div");
@@ -1021,9 +1068,14 @@ function init() {
       renderPlanExplorer();
     });
   }
+
+  // Stage 4: task table
+  stageProgress(4, TOTAL);
+  await yield_();
   renderTasks();
-  setLoadingText('Finalizing view…');
-  requestAnimationFrame(() => hideLoading());
+  stageProgress(TOTAL, TOTAL);
+  await yield_();
+  hideLoading();
 }
 
 // ── Tasks tab ─────────────────────────────────────────────────────────────
@@ -1383,7 +1435,7 @@ function renderGantt() {
   Plotly.react(document.getElementById('ganttPlot'), traces, layout, { displayModeBar: false, responsive: true });
 }
 
-init();
+init().catch(e => console.error('Dashboard init failed:', e));
 <\/script>
 </body>
 </html>`;
