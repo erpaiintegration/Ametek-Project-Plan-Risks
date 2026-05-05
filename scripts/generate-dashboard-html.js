@@ -426,6 +426,8 @@ async function main() {
       const linkedTasks = explicitLinkedTasks.length
         ? explicitLinkedTasks
         : inferLinkedTasksFromText(r, tasks, workstreamHints);
+      const primaryTask = pickPrimaryTask(linkedTasks);
+      const impactedMilestone = pickImpactedMilestone(primaryTask, taskById);
       const aiCategory = copilotCategory(r);
       const plainIssue = specificIssueNarrative(r, linkedTasks, taskById);
       const plainImpact = specificImpactNarrative(r, linkedTasks, taskById);
@@ -442,6 +444,13 @@ async function main() {
         plainIssue,
         plainImpact,
         actions,
+        workstream: primaryTask?.workstream || "(Unassigned)",
+        owner: primaryTask?.assignedTo || "Unassigned",
+        taskName: primaryTask?.name || "(No linked task)",
+        taskStart: primaryTask?.start || null,
+        taskFinish: primaryTask?.finish || null,
+        milestoneName: impactedMilestone?.name || null,
+        milestoneDate: impactedMilestone?.finish || impactedMilestone?.start || null,
         linkedTaskCount: linkedTasks.length,
         milestoneOwners
       };
@@ -668,12 +677,12 @@ ${plotlyScript}
 <!-- ACTIONS TAB -->
 <div id="actionsContent" style="display:none;flex:1;overflow:hidden;padding:10px 18px 12px;">
   <div class="panel" style="height:100%;overflow:hidden;">
-    <div class="panel-title">Copilot Insights — Simplified issue, impact, and recommended resolution</div>
+    <div class="panel-title">Copilot Insights — focused schedule conflicts, dates, and corrective actions</div>
     <div class="tbl-wrap" style="height:100%;box-shadow:none;border-radius:10px;">
       <table>
         <thead>
           <tr>
-            <th>AI Category</th><th>Issue (Plain)</th><th>Impact (Plain)</th><th>Recommended Actions</th><th>Milestones + Assigned</th>
+            <th>Issue</th><th>Key Dates</th><th>Recommended Actions</th><th>Owner</th>
           </tr>
         </thead>
         <tbody id="actionBody"></tbody>
@@ -1100,20 +1109,25 @@ function renderActions() {
   const body = document.getElementById("actionBody");
   const items = DATA.actionItems || [];
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="5" class="empty">No open risks/issues to summarize.</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" class="empty">No open risks/issues to summarize.</td></tr>';
     return;
   }
   body.innerHTML = items.slice(0, 250).map(a => {
     const acts = (a.actions || []).map(x => '<div>• ' + esc(x) + '</div>').join('');
-    const milestones = (a.milestoneOwners || []).length
-      ? a.milestoneOwners.map(m => '<div><span class="pill done">🏁</span> ' + esc(trunc(m.name, 28)) + ' — ' + esc(m.assignedTo || 'Unassigned') + ' (' + fmt(m.finish) + ')</div>').join('')
-      : '<span style="color:var(--text2)">No linked milestones</span>';
+    const dates = [
+      '<div><span style="color:var(--text2)">Task start:</span> ' + esc(fmt(a.taskStart)) + '</div>',
+      '<div><span style="color:var(--text2)">Task finish:</span> ' + esc(fmt(a.taskFinish)) + '</div>',
+      '<div><span style="color:var(--text2)">Milestone date:</span> ' + esc(fmt(a.milestoneDate)) + '</div>'
+    ].join('');
+    const issueCell =
+      '<div style="font-weight:600">' + esc(a.workstream || '(Unassigned)') + '</div>' +
+      '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + esc(trunc(a.taskName || '(No linked task)', 60)) + '</div>' +
+      '<div style="margin-top:6px">' + esc(a.plainIssue) + '</div>';
     return '<tr>' +
-      '<td><span class="pill issue">' + esc(a.aiCategory) + '</span><div style="font-size:10px;color:var(--text2);margin-top:4px">' + esc(a.type) + ' · ' + esc(a.severity || '(Unrated)') + '</div></td>' +
-      '<td>' + esc(a.plainIssue) + '</td>' +
-      '<td>' + esc(a.plainImpact) + '</td>' +
+      '<td>' + issueCell + '<div style="font-size:11px;color:var(--text2);margin-top:6px">Impact: ' + esc(a.plainImpact) + '</div></td>' +
+      '<td>' + dates + '</td>' +
       '<td>' + acts + '</td>' +
-      '<td>' + milestones + '</td>' +
+      '<td>' + esc(a.owner || 'Unassigned') + '</td>' +
       '</tr>';
   }).join('');
 }
