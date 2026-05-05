@@ -611,24 +611,65 @@ ${plotlyScript}
   .loading-bar{height:100%;border-radius:4px;background:var(--blue);transition:width .3s ease;width:0%;}
   .loading-pct{font-size:11px;color:var(--text2);}
   .loading-spin-sm{width:14px;height:14px;border:2px solid #d8e2ee;border-top-color:var(--blue);border-radius:50%;display:inline-block;animation:spin .85s linear infinite;}
-  .board-layout{display:grid;grid-template-columns:420px 1fr;gap:10px;flex:1;min-height:0;}
+  /* ── Dependency Board ── */
+  .board-layout{display:grid;grid-template-columns:400px 1fr;gap:12px;flex:1;min-height:0;}
   .board-left{display:flex;flex-direction:column;min-height:0;gap:10px;}
-  .board-list{overflow:auto;max-height:240px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);padding:6px;}
-  .board-item{padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);margin-bottom:6px;cursor:pointer;}
-  .board-item:hover{border-color:var(--accent);}
-  .board-item.active{border-color:var(--blue);background:#eef2ff;}
-  .board-tree{overflow:auto;flex:1;border:1px solid var(--border);border-radius:10px;padding:8px;background:var(--surface);}
-  .board-node{position:relative;padding:5px 6px;border-radius:6px;margin:2px 0;border:1px solid transparent;}
-  .board-node.branch::before{content:"";position:absolute;left:-10px;top:-8px;bottom:-8px;border-left:1px solid #cbd5e1;}
-  .board-node.branch::after{content:"";position:absolute;left:-10px;top:13px;width:10px;border-top:1px solid #cbd5e1;}
-  .board-node.root{background:#eef2ff;border-color:#c7d2fe;}
-  .board-node.pred{background:#ecfdf5;border-color:#bbf7d0;}
+  /* issue list */
+  .board-list{overflow:auto;max-height:220px;padding:4px;}
+  .board-item{padding:9px 11px;border:1.5px solid var(--border);border-radius:10px;background:var(--surface);margin-bottom:5px;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+  .board-item:hover{border-color:#93c5fd;box-shadow:0 1px 6px #3b82f615;}
+  .board-item.active{border-color:var(--blue);background:#eef2ff;box-shadow:0 0 0 2px #c7d2fe;}
+  .board-item-name{font-size:12.5px;font-weight:600;color:var(--text1);}
+  .board-item-sub{font-size:11px;color:var(--text2);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .board-item-chip{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600;background:#f1f5f9;border:1px solid var(--border);color:var(--text2);}
+  .board-item-chip.red{background:#fff1f2;border-color:#fecdd3;color:#be123c;}
+  .board-item-chip.amber{background:#fffbeb;border-color:#fde68a;color:#92400e;}
+  /* root hero card */
+  .board-root-card{background:linear-gradient(135deg,#eef2ff 0%,#e0e7ff 100%);border:1.5px solid #c7d2fe;border-radius:12px;padding:12px 14px;margin-bottom:2px;}
+  .board-root-name{font-size:13px;font-weight:700;color:#1e1b4b;margin-bottom:6px;}
+  .board-root-chips{display:flex;gap:6px;flex-wrap:wrap;}
+  .board-root-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:600;border:1px solid;}
+  .board-root-chip.owner{background:#ede9fe;border-color:#c4b5fd;color:#5b21b6;}
+  .board-root-chip.dates{background:#fff7ed;border-color:#fed7aa;color:#c2410c;}
+  .board-root-chip.pred{background:#dcfce7;border-color:#86efac;color:#166534;}
+  .board-root-chip.suc{background:#dbeafe;border-color:#93c5fd;color:#1e40af;}
+  .board-root-chip.pct{background:#f0fdf4;border-color:#86efac;color:#15803d;}
+  /* section headers */
+  .board-section-hdr{display:flex;align-items:center;gap:8px;margin:10px 0 4px;}
+  .board-section-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);}
+  .board-section-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;font-size:10px;font-weight:700;}
+  .board-section-count.pred{background:#dcfce7;color:#166534;}
+  .board-section-count.suc{background:#dbeafe;color:#1e40af;}
+  /* tree */
+  .board-tree{overflow:auto;flex:1;padding:4px 2px;}
+  .board-node{position:relative;padding:7px 10px 7px 10px;border-radius:8px;margin:3px 0;border:1.5px solid transparent;transition:border-color .12s;}
+  .board-node.branch::before{content:"";position:absolute;left:-1px;top:-4px;bottom:-4px;border-left:2px solid #e2e8f0;}
+  .board-node.branch::after{content:"";position:absolute;left:-1px;top:50%;width:8px;border-top:2px solid #e2e8f0;}
+  .board-node.pred{background:#f0fdf4;border-color:#bbf7d0;}
+  .board-node.pred:hover{border-color:#4ade80;}
   .board-node.suc{background:#eff6ff;border-color:#bfdbfe;}
-  .board-node-meta{font-size:11px;color:var(--text2);margin-top:2px;}
-  .board-node-rel{display:inline-block;font-size:10px;font-weight:700;border-radius:999px;padding:1px 7px;margin-right:6px;vertical-align:middle;}
-  .board-node-rel.pred{background:#dcfce7;color:#166534;}
-  .board-node-rel.suc{background:#dbeafe;color:#1e40af;}
-  .board-node-toggle{border:1px solid var(--border);background:var(--surface2);border-radius:4px;cursor:pointer;width:18px;height:18px;line-height:1;font-size:11px;margin-right:6px;}
+  .board-node.suc:hover{border-color:#60a5fa;}
+  .board-node.driving{outline:2px solid #f59e0b;outline-offset:1px;}
+  .board-node-row{display:flex;align-items:flex-start;gap:8px;}
+  .board-node-toggle{flex-shrink:0;border:1.5px solid var(--border);background:var(--surface);border-radius:5px;cursor:pointer;width:20px;height:20px;line-height:1;font-size:12px;display:flex;align-items:center;justify-content:center;margin-top:1px;}
+  .board-node-body{flex:1;min-width:0;}
+  .board-node-name{font-size:12px;font-weight:600;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .board-node-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+  .board-chip{display:inline-block;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:600;border:1px solid;}
+  .board-chip.date{background:#fff7ed;border-color:#fed7aa;color:#c2410c;}
+  .board-chip.pct{background:#f0fdf4;border-color:#86efac;color:#15803d;}
+  .board-chip.milestone{background:#faf5ff;border-color:#e9d5ff;color:#7c3aed;}
+  .board-chip.driving{background:#fffbeb;border-color:#fcd34d;color:#92400e;}
+  .board-chip.dep{background:#f8fafc;border-color:#cbd5e1;color:#475569;}
+  /* toolbar */
+  .board-toolbar{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;}
+  .board-btn{padding:3px 9px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-size:10.5px;font-weight:600;cursor:pointer;color:var(--text2);transition:all .12s;white-space:nowrap;}
+  .board-btn:hover{border-color:#93c5fd;color:#1d4ed8;background:#eff6ff;}
+  .board-btn.active{background:#1d4ed8;border-color:#1d4ed8;color:#fff;}
+  .board-btn.amber.active{background:#d97706;border-color:#d97706;color:#fff;}
+  .board-divider{width:1px;height:16px;background:var(--border);margin:0 1px;}
+  /* gantt panel */
+  .board-gantt-panel{display:flex;flex-direction:column;min-height:0;}
   @keyframes spin{to{transform:rotate(360deg)}}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
@@ -729,26 +770,43 @@ ${plotlyScript}
 <!-- DEPENDENCY BOARD TAB -->
 <div id="boardContent" style="display:none;flex:1;overflow:hidden;padding:10px 18px 12px;">
   <div class="board-layout">
+    <!-- LEFT COLUMN -->
     <div class="board-left">
-      <div class="panel" style="padding:8px;">
-        <div class="panel-title">Issue / Risk Board (select one)</div>
+      <!-- Issue picker -->
+      <div class="panel" style="padding:10px 10px 8px;">
+        <div class="panel-title">Issues &amp; Risks</div>
         <div id="boardList" class="board-list"></div>
       </div>
-      <div class="panel" style="min-height:0;display:flex;flex-direction:column;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-          <div class="panel-title" style="margin-bottom:0;">Task Linkage Tree</div>
-          <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;">
-            <input type="checkbox" id="boardCriticalOnly" onchange="toggleBoardCriticalOnly(this.checked)"> Critical path only
-          </label>
-          <button id="boardExpandAll" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;">Expand all</button>
-          <button id="boardCollapseAll" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;">Collapse all</button>
+      <!-- Tree panel -->
+      <div class="panel" style="min-height:0;display:flex;flex-direction:column;padding:10px;">
+        <div style="margin-bottom:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div class="panel-title" style="margin-bottom:0;">Dependency Chain</div>
+            <div class="board-toolbar">
+              <button id="btnCritical" class="board-btn" onclick="toggleBoardMode('critical')">🎯 Critical</button>
+              <button id="btnDriving" class="board-btn amber" onclick="toggleBoardMode('driving')">⚡ Driving</button>
+              <div class="board-divider"></div>
+              <button id="boardExpandAll" class="board-btn">+ All</button>
+              <button id="boardCollapseAll" class="board-btn">− All</button>
+            </div>
+          </div>
         </div>
-        <div id="boardSummary" style="font-size:12px;color:var(--text2);margin-bottom:6px;">Select an item from the board list.</div>
+        <div id="boardRootCard"></div>
         <div id="boardTree" class="board-tree"></div>
       </div>
     </div>
-    <div class="panel" style="min-height:0;display:flex;flex-direction:column;">
-      <div class="panel-title">Related Tasks Gantt (selected issue)</div>
+    <!-- RIGHT COLUMN: Gantt -->
+    <div class="panel board-gantt-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div class="panel-title" style="margin-bottom:0;">Schedule Chain — Gantt</div>
+        <span id="boardGanttLegend" style="display:flex;gap:10px;font-size:10.5px;color:var(--text2);align-items:center;">
+          <span><svg width="10" height="10"><rect width="10" height="10" rx="2" fill="#4b6bfb"/></svg> Root</span>
+          <span><svg width="10" height="10"><rect width="10" height="10" rx="2" fill="#16a34a"/></svg> Predecessor</span>
+          <span><svg width="10" height="10"><rect width="10" height="10" rx="2" fill="#2563eb"/></svg> Successor</span>
+          <span><svg width="10" height="10"><polygon points="5,0 10,5 5,10 0,5" fill="#7c3aed"/></svg> Milestone</span>
+          <span style="color:#d97706;">— — Dependency</span>
+        </span>
+      </div>
       <div id="boardGantt" style="flex:1;min-height:0;"></div>
     </div>
   </div>
@@ -849,7 +907,7 @@ const taskById = new Map(DATA.tasks.map(t => [t.id, t]));
 const taskByUid = new Map(DATA.tasks.filter(t => t.uid != null).map(t => [t.uid, t]));
 let planState = null;
 let planGanttTimer = null;
-const boardState = { selectedActionId: null, expanded: new Set(), tree: null, nodeMap: new Map(), rootTask: null, criticalOnly: false };
+const boardState = { selectedActionId: null, expanded: new Set(), tree: null, nodeMap: new Map(), rootTask: null, criticalOnly: false, drivingOnly: false };
 const fmt = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"}) : "—";
 const fmtShort = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—";
 const esc = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -1238,6 +1296,9 @@ function buildBoardTree(rootTask) {
     predCandidates = predPick ? [predPick] : [];
     sucCandidates = sucPick ? [sucPick] : [];
   }
+  if (boardState.drivingOnly) {
+    predCandidates = predCandidates.filter(t => isDrivingPred(t, rootTask));
+  }
 
   const predRoots = predCandidates.map(t =>
     buildBoardSubtree(t, 'pred', 1, 3, new Set(['pred:' + rootTask.id]), nodeMap, idRef, rootTask.id)
@@ -1248,38 +1309,75 @@ function buildBoardTree(rootTask) {
   return { predRoots, sucRoots, nodeMap };
 }
 
+function isDrivingPred(predTask, childTask) {
+  // A predecessor is "driving" when its finish is within 1 day of the child's start (no float)
+  if (!predTask || !childTask) return false;
+  const pf = predTask.finish ? new Date(predTask.finish).getTime() : null;
+  const cs = childTask.start ? new Date(childTask.start).getTime() : null;
+  if (!pf || !cs) return false;
+  return (cs - pf) <= 86400000; // ≤ 1 day gap
+}
+
 function boardNodeRow(node) {
   const canExpand = node.children.length > 0;
   const isOpen = boardState.expanded.has(node.id);
   const cls = node.relation === 'pred' ? 'pred' : 'suc';
-  const pad = node.depth * 16;
+  const pad = node.depth * 18;
+  const parentTask = node.relation === 'pred' && node.parentTaskId ? taskById.get(node.parentTaskId) : null;
+  const driving = node.relation === 'pred' && isDrivingPred(node.task, parentTask || boardState.rootTask);
   const btn = canExpand
     ? '<button class="board-node-toggle" onclick="toggleBoardNode(' + node.id + ')">' + (isOpen ? '−' : '+') + '</button>'
-    : '<span style="display:inline-block;width:18px;margin-right:6px"></span>';
-  const relTag = node.relation === 'pred' ? 'PREDECESSOR' : 'SUCCESSOR';
+    : '<span style="display:inline-block;width:20px;"></span>';
   const isMilestone = !!node.task.milestone;
-  const row = '<div class="board-node branch ' + cls + '" style="margin-left:' + pad + 'px">' +
-    '<div style="display:flex;align-items:flex-start">' + btn +
-    '<div><div style="font-weight:600"><span class="board-node-rel ' + cls + '">' + relTag + '</span>' + (isMilestone ? '🏁 ' : '') + esc(trunc(node.task.name, 64)) + '</div>' +
-    '<div class="board-node-meta">Lvl ' + esc(String(node.depth)) + ' · UID ' + esc(String(node.task.uid || '—')) + ' · Start ' + esc(fmt(node.task.start)) + ' · Finish ' + esc(fmt(node.task.finish)) + ' · % ' + esc(String(node.task.pct || 0)) + ' · Pred ' + esc(String(node.task.predCount || 0)) + ' · Suc ' + esc(String(node.task.sucCount || 0)) + '</div></div></div></div>';
+  const slipped = node.task.isSlipped;
+  const chips = [
+    isMilestone ? '<span class="board-chip milestone">🏁 Milestone</span>' : '',
+    driving ? '<span class="board-chip driving">⚡ Driving</span>' : '',
+    node.task.start || node.task.finish ? '<span class="board-chip date">' + esc(fmt(node.task.start)) + ' → ' + esc(fmt(node.task.finish)) + '</span>' : '',
+    '<span class="board-chip pct">' + esc(String(node.task.pct || 0)) + '%</span>',
+    (node.task.predCount || node.task.sucCount) ? '<span class="board-chip dep">↑' + esc(String(node.task.predCount||0)) + ' ↓' + esc(String(node.task.sucCount||0)) + '</span>' : ''
+  ].filter(Boolean).join('');
+  const drivingCls = driving ? ' driving' : '';
+  const row = '<div class="board-node branch ' + cls + drivingCls + '" style="margin-left:' + pad + 'px">' +
+    '<div class="board-node-row">' + btn +
+    '<div class="board-node-body">' +
+    '<div class="board-node-name">' + (slipped ? '🔴 ' : '') + esc(trunc(node.task.name, 58)) + '</div>' +
+    '<div class="board-node-meta">' + chips + '</div>' +
+    '</div></div></div>';
   if (!canExpand || !isOpen) return row;
   return row + node.children.map(boardNodeRow).join('');
 }
 
 function renderBoardTree() {
   const host = document.getElementById('boardTree');
+  const rootCard = document.getElementById('boardRootCard');
   if (!boardState.rootTask || !boardState.tree) {
-    host.innerHTML = '<div style="color:var(--text2)">Select an item from the board list.</div>';
+    if (rootCard) rootCard.innerHTML = '';
+    host.innerHTML = '<div style="color:var(--text2);padding:8px">Select an issue to explore its dependency chain.</div>';
     return;
   }
   const root = boardState.rootTask;
-  const rootBlock = '<div class="board-node root"><div style="font-weight:700">Root: ' + esc(trunc(root.name, 70)) + '</div>' +
-    '<div class="board-node-meta">Start ' + esc(fmt(root.start)) + ' · Finish ' + esc(fmt(root.finish)) + ' · Owner ' + esc(root.assignedTo || 'Unassigned') + ' · Pred ' + esc(String(root.predCount || 0)) + ' · Suc ' + esc(String(root.sucCount || 0)) + '</div></div>';
-  const predSection = '<div style="margin-top:8px"><div style="font-size:11px;color:var(--text2);margin:4px 0">Predecessors</div>' +
-    (boardState.tree.predRoots.length ? boardState.tree.predRoots.map(boardNodeRow).join('') : '<div style="color:var(--text2)">No predecessors</div>') + '</div>';
-  const sucSection = '<div style="margin-top:8px"><div style="font-size:11px;color:var(--text2);margin:4px 0">Successors</div>' +
-    (boardState.tree.sucRoots.length ? boardState.tree.sucRoots.map(boardNodeRow).join('') : '<div style="color:var(--text2)">No successors</div>') + '</div>';
-  host.innerHTML = rootBlock + predSection + sucSection;
+  // Root hero card
+  if (rootCard) {
+    const slipped = root.isSlipped ? '<span class="board-root-chip dates">🔴 Slipped ' + esc(String(root.slipDays || '')) + 'd</span>' : '';
+    rootCard.innerHTML = '<div class="board-root-card">' +
+      '<div class="board-root-name">' + (root.milestone ? '🏁 ' : '') + esc(trunc(root.name, 70)) + '</div>' +
+      '<div class="board-root-chips">' +
+        (root.assignedTo ? '<span class="board-root-chip owner">👤 ' + esc(trunc(root.assignedTo, 24)) + '</span>' : '') +
+        '<span class="board-root-chip dates">📅 ' + esc(fmt(root.start)) + ' → ' + esc(fmt(root.finish)) + '</span>' +
+        '<span class="board-root-chip pct">' + esc(String(root.pct || 0)) + '% done</span>' +
+        '<span class="board-root-chip pred">↑ ' + esc(String(root.predCount || 0)) + ' pred</span>' +
+        '<span class="board-root-chip suc">↓ ' + esc(String(root.sucCount || 0)) + ' suc</span>' +
+        slipped +
+      '</div></div>';
+  }
+  const predRoots = boardState.tree.predRoots;
+  const sucRoots = boardState.tree.sucRoots;
+  const predHdr = '<div class="board-section-hdr"><span class="board-section-label">Predecessors</span><span class="board-section-count pred">' + predRoots.length + '</span></div>';
+  const sucHdr = '<div class="board-section-hdr"><span class="board-section-label">Successors</span><span class="board-section-count suc">' + sucRoots.length + '</span></div>';
+  const predBody = predRoots.length ? predRoots.map(boardNodeRow).join('') : '<div style="font-size:12px;color:var(--text2);padding:4px 6px">No predecessors</div>';
+  const sucBody = sucRoots.length ? sucRoots.map(boardNodeRow).join('') : '<div style="font-size:12px;color:var(--text2);padding:4px 6px">No successors</div>';
+  host.innerHTML = predHdr + predBody + sucHdr + sucBody;
 }
 
 function collectBoardTasks() {
@@ -1322,10 +1420,10 @@ function renderBoardGantt() {
   maxD.setDate(maxD.getDate() + 10);
 
   const y = rows.map(r => {
-    const indent = ' '.repeat(Math.min(10, (r.depth || 0) * 2));
-    const tag = r.relation === 'ROOT' ? '[ROOT]' : (r.relation === 'PRED' ? '[PRED]' : '[SUC]');
-    const typeTag = r.task.milestone ? '🏁' : '•';
-    return indent + tag + ' ' + typeTag + ' ' + trunc(r.task.name, 44);
+    const indent = '\u00a0'.repeat(Math.min(8, (r.depth || 0) * 3));
+    const tag = r.relation === 'ROOT' ? '\u25cf' : (r.relation === 'PRED' ? '\u2191' : '\u2193');
+    const typeTag = r.task.milestone ? '\ud83c\udfc1' : '';
+    return indent + tag + ' ' + typeTag + trunc(r.task.name, 42);
   });
 
   const taskRows = rows.filter(r => !r.task.milestone);
@@ -1406,11 +1504,11 @@ function renderBoardGantt() {
   }
 
   Plotly.react(host, traces, {
-    margin: { l: 280, r: 16, t: 10, b: 36 },
-    paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
-    height: Math.max(520, rows.length * 26),
-    xaxis: { type: 'date', range: [minD.toISOString(), maxD.toISOString()], showgrid: true, gridcolor: '#e7edf4', tickfont: { color: '#5f7185', size: 10 } },
-    yaxis: { automargin: true, autorange: 'reversed', tickfont: { color: '#334155', size: 10 } },
+    margin: { l: 260, r: 16, t: 10, b: 36 },
+    paper_bgcolor: '#ffffff', plot_bgcolor: '#f8fafc',
+    height: Math.max(480, rows.length * 30),
+    xaxis: { type: 'date', range: [minD.toISOString(), maxD.toISOString()], showgrid: true, gridcolor: '#e2e8f0', gridwidth: 1, tickfont: { color: '#64748b', size: 10 }, zeroline: false },
+    yaxis: { automargin: true, autorange: 'reversed', tickfont: { color: '#334155', size: 10.5 } },
     showlegend: false
   }, { displayModeBar: false, responsive: true });
 }
@@ -1421,11 +1519,23 @@ function toggleBoardNode(id) {
   renderBoardTree();
 }
 
-function toggleBoardCriticalOnly(checked) {
-  boardState.criticalOnly = !!checked;
+function toggleBoardMode(mode) {
+  // toggle critical or driving; they are mutually exclusive
+  if (mode === 'critical') {
+    boardState.criticalOnly = !boardState.criticalOnly;
+    boardState.drivingOnly = false;
+  } else if (mode === 'driving') {
+    boardState.drivingOnly = !boardState.drivingOnly;
+    boardState.criticalOnly = false;
+  }
+  const bc = document.getElementById('btnCritical');
+  const bd = document.getElementById('btnDriving');
+  if (bc) bc.classList.toggle('active', !!boardState.criticalOnly);
+  if (bd) bd.classList.toggle('active', !!boardState.drivingOnly);
   if (!boardState.selectedActionId) return;
   selectBoardAction(boardState.selectedActionId);
 }
+function toggleBoardCriticalOnly(checked) { /* legacy no-op */ }
 
 function selectBoardAction(actionId) {
   boardState.selectedActionId = actionId;
@@ -1455,10 +1565,7 @@ function selectBoardAction(actionId) {
   for (const n of boardState.nodeMap.values()) {
     if (n.depth <= 1) boardState.expanded.add(n.id);
   }
-  document.getElementById('boardSummary').textContent =
-    (action?.plainIssue || simpleSentence(rootTask.name)) +
-    ' | Milestone: ' + (action?.milestoneName ? (action.milestoneName + ' (' + fmt(action.milestoneDate) + ')') : '—') +
-    ' | Linkage: Pred ' + (rootTask.predCount || 0) + ' · Suc ' + (rootTask.sucCount || 0);
+  // summary no longer needed — root card replaces it
   renderBoardTree();
   renderBoardGantt();
 }
@@ -1472,29 +1579,32 @@ function renderBoardTab() {
     document.getElementById('boardGantt').innerHTML = '<div style="color:var(--text2);padding:10px">No data.</div>';
     return;
   }
-  list.innerHTML = items.map(a =>
-    '<div class="board-item" id="board-item-' + a.id + '" onclick="selectBoardAction(\\\'' + a.id + '\\\')">' +
-    '<div style="font-weight:600">' + esc(trunc(a.taskName || a.plainIssue, 54)) + '</div>' +
-    '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + esc(a.workstream || '(Unassigned)') + ' · Milestone ' + esc(fmt(a.milestoneDate)) + '</div>' +
-    '<div style="font-size:11px;margin-top:4px">' + esc(trunc(a.plainIssue, 120)) + '</div>' +
-    '</div>'
-  ).join('');
+  list.innerHTML = items.map(a => {
+    const isSlipped = a.taskId ? (taskById.get(a.taskId) || {}).isSlipped : false;
+    const chipCls = isSlipped ? ' red' : '';
+    return '<div class="board-item" id="board-item-' + a.id + '" onclick="selectBoardAction(\\\'' + a.id + '\\\')">' +
+      '<div class="board-item-name">' + (isSlipped ? '🔴 ' : '') + esc(trunc(a.taskName || a.plainIssue, 52)) + '</div>' +
+      '<div class="board-item-sub">' +
+        (a.workstream ? '<span class="board-item-chip">' + esc(a.workstream) + '</span>' : '') +
+        (a.milestoneDate ? '<span class="board-item-chip' + chipCls + '">🏁 ' + esc(fmt(a.milestoneDate)) + '</span>' : '') +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text2);margin-top:5px;line-height:1.4">' + esc(trunc(a.plainIssue, 110)) + '</div>' +
+    '</div>';
+  }).join('');
 
   const exp = document.getElementById('boardExpandAll');
   const col = document.getElementById('boardCollapseAll');
-  const critical = document.getElementById('boardCriticalOnly');
-  if (critical) critical.checked = !!boardState.criticalOnly;
-  if (exp && col) {
-    exp.onclick = () => {
-      if (!boardState.nodeMap) return;
-      for (const n of boardState.nodeMap.values()) if (n.children.length) boardState.expanded.add(n.id);
-      renderBoardTree();
-    };
-    col.onclick = () => {
-      boardState.expanded.clear();
-      renderBoardTree();
-    };
-  }
+  if (exp) exp.onclick = () => {
+    if (!boardState.nodeMap) return;
+    for (const n of boardState.nodeMap.values()) if (n.children.length) boardState.expanded.add(n.id);
+    renderBoardTree();
+  };
+  if (col) col.onclick = () => { boardState.expanded.clear(); renderBoardTree(); };
+  // sync button active states
+  const bc = document.getElementById('btnCritical');
+  const bd = document.getElementById('btnDriving');
+  if (bc) bc.classList.toggle('active', !!boardState.criticalOnly);
+  if (bd) bd.classList.toggle('active', !!boardState.drivingOnly);
 
   const first = items.find(a => a.taskId) || items[0];
   if (first) selectBoardAction(first.id);
