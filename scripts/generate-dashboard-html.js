@@ -225,6 +225,17 @@ function specificActions(rec, linkedTasks, taskById) {
   return actions;
 }
 
+function buildLinkageImpact(primaryTask, impactedMilestone) {
+  if (!primaryTask) return "No linked task context available.";
+  const pred = primaryTask.predCount || 0;
+  const suc = primaryTask.sucCount || 0;
+  const base = `${pred} predecessor(s) → ${simpleSentence(primaryTask.name)} → ${suc} successor(s)`;
+  if (impactedMilestone) {
+    return `${base}; direct milestone impact: ${simpleSentence(impactedMilestone.name)} on ${fmtIso(impactedMilestone.finish || impactedMilestone.start)}.`;
+  }
+  return `${base}; downstream successors are exposed to schedule slippage.`;
+}
+
 function normalizeToken(s) {
   return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -432,6 +443,7 @@ async function main() {
       const plainIssue = specificIssueNarrative(r, linkedTasks, taskById);
       const plainImpact = specificImpactNarrative(r, linkedTasks, taskById);
       const actions = specificActions(r, linkedTasks, taskById);
+      const linkageImpact = buildLinkageImpact(primaryTask, impactedMilestone);
       const milestoneHits = linkedTasks.filter(t => t.milestone).slice(0, 3);
       const milestoneOwners = milestoneHits.map(t => ({ name: t.name, assignedTo: t.assignedTo, finish: t.finish || t.start }));
       return {
@@ -447,10 +459,13 @@ async function main() {
         workstream: primaryTask?.workstream || "(Unassigned)",
         owner: primaryTask?.assignedTo || "Unassigned",
         taskName: primaryTask?.name || "(No linked task)",
+        predCount: primaryTask?.predCount || 0,
+        sucCount: primaryTask?.sucCount || 0,
         taskStart: primaryTask?.start || null,
         taskFinish: primaryTask?.finish || null,
         milestoneName: impactedMilestone?.name || null,
         milestoneDate: impactedMilestone?.finish || impactedMilestone?.start || null,
+        linkageImpact,
         linkedTaskCount: linkedTasks.length,
         milestoneOwners
       };
@@ -1117,12 +1132,17 @@ function renderActions() {
     const dates = [
       '<div><span style="color:var(--text2)">Task start:</span> ' + esc(fmt(a.taskStart)) + '</div>',
       '<div><span style="color:var(--text2)">Task finish:</span> ' + esc(fmt(a.taskFinish)) + '</div>',
+      '<div><span style="color:var(--text2)">Milestone:</span> ' + esc(a.milestoneName ? trunc(a.milestoneName, 40) : '—') + '</div>',
       '<div><span style="color:var(--text2)">Milestone date:</span> ' + esc(fmt(a.milestoneDate)) + '</div>'
     ].join('');
+    const deps = '<div style="font-size:11px;color:var(--text2);margin-top:6px">Pred: ' + esc(String(a.predCount || 0)) + ' · Suc: ' + esc(String(a.sucCount || 0)) + '</div>';
+    const linkage = '<div style="font-size:11px;margin-top:6px"><span style="color:var(--text2)">Linkage impact:</span> ' + esc(a.linkageImpact || '—') + '</div>';
     const issueCell =
       '<div style="font-weight:600">' + esc(a.workstream || '(Unassigned)') + '</div>' +
       '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + esc(trunc(a.taskName || '(No linked task)', 60)) + '</div>' +
-      '<div style="margin-top:6px">' + esc(a.plainIssue) + '</div>';
+      '<div style="margin-top:6px">' + esc(a.plainIssue) + '</div>' +
+      deps +
+      linkage;
     return '<tr>' +
       '<td>' + issueCell + '<div style="font-size:11px;color:var(--text2);margin-top:6px">Impact: ' + esc(a.plainImpact) + '</div></td>' +
       '<td>' + dates + '</td>' +
