@@ -7,6 +7,8 @@ const path = require("path");
 // Inline Chart.js so the HTML works offline / file:// / Notion embed
 const CHARTJS_PATH = path.join(__dirname, "..", "node_modules", "chart.js", "dist", "chart.umd.js");
 const CHARTJS_INLINE = fs.existsSync(CHARTJS_PATH) ? fs.readFileSync(CHARTJS_PATH, "utf8") : null;
+const PLOTLY_PATH = path.join(__dirname, "..", "node_modules", "plotly.js-dist-min", "plotly.min.js");
+const PLOTLY_INLINE = fs.existsSync(PLOTLY_PATH) ? fs.readFileSync(PLOTLY_PATH, "utf8") : null;
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const TASKS_DB_ID = process.env.NOTION_TASKS_DB_ID;
 const RISKS_DB_ID = process.env.NOTION_RISKS_DB_ID || "357ae9be-8a60-8190-b720-c130c7104cf1";
@@ -205,6 +207,9 @@ function buildHtml(payload) {
   const chartScript = CHARTJS_INLINE
     ? `<script>${CHARTJS_INLINE.replace(/<\/script>/gi, "<\\/script>")}<\/script>`
     : `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"><\/script>`;
+  const plotlyScript = PLOTLY_INLINE
+    ? `<script>${PLOTLY_INLINE.replace(/<\/script>/gi, "<\\/script>")}<\/script>`
+    : `<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"><\/script>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -213,16 +218,17 @@ function buildHtml(payload) {
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Ametek SAP S4 — Schedule Dashboard</title>
 ${chartScript}
+${plotlyScript}
 <style>
-  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3350;--text:#e8eaf6;--text2:#9096b8;--red:#ef5350;--amber:#ff9800;--green:#66bb6a;--blue:#42a5f5;--accent:#5c6bc0;}
+  :root{--bg:#f4f7fb;--surface:#ffffff;--surface2:#eef3f8;--border:#d7e0ea;--text:#102033;--text2:#5f7185;--red:#d85b72;--amber:#c7922a;--green:#2f8f6b;--blue:#4b6bfb;--accent:#7b8cff;--shadow:0 10px 28px rgba(15,23,42,.06);}
   *{box-sizing:border-box;margin:0;padding:0;}
   body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
-  header{background:var(--surface);border-bottom:1px solid var(--border);padding:8px 18px;display:flex;align-items:center;gap:12px;flex-shrink:0;}
+  header{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 18px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:var(--shadow);}
   header h1{font-size:15px;font-weight:700;}
-  .health-badge{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;background:#3b1a1a;}
+  .health-badge{padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#fdf0f2;color:#b9384f;border:1px solid #f4c6d0;}
   header .gen{font-size:11px;color:var(--text2);margin-left:auto;}
   .kpi-strip{display:flex;gap:8px;padding:8px 18px;flex-shrink:0;overflow-x:auto;}
-  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 14px;white-space:nowrap;display:flex;align-items:baseline;gap:8px;}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 14px;white-space:nowrap;display:flex;align-items:baseline;gap:8px;box-shadow:var(--shadow);}
   .kpi .val{font-size:20px;font-weight:700;line-height:1;}
   .kpi .lbl{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;}
   .kpi.red .val{color:var(--red);}.kpi.amber .val{color:var(--amber);}.kpi.green .val{color:var(--green);}.kpi.blue .val{color:var(--blue);}
@@ -230,14 +236,14 @@ ${chartScript}
   .tab-btn{padding:7px 18px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .12s,border-color .12s;}
   .tab-btn:hover{color:var(--text);} .tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);}
   .charts-strip{display:grid;grid-template-columns:220px 1fr 200px;gap:8px;padding:8px 18px;flex-shrink:0;height:165px;}
-  .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;overflow:hidden;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px;display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow);}
   .panel-title{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:6px;flex-shrink:0;}
   .chart-wrap{flex:1;position:relative;min-height:0;}
   .mini-milestone{width:100%;height:100%;overflow:hidden;}
   .mini-milestone svg{width:100%;height:100%;display:block;}
   .type-list{display:flex;flex-direction:column;gap:4px;overflow-y:auto;flex:1;}
   .type-tile{display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;transition:border-color .12s,background .12s;user-select:none;}
-  .type-tile:hover{border-color:var(--accent);} .type-tile.active{border-color:var(--blue);background:#1a2744;}
+  .type-tile:hover{border-color:var(--accent);} .type-tile.active{border-color:var(--blue);background:#eef2ff;}
   .type-tile .type-label{font-size:12px;} .type-tile .type-badge{background:var(--accent);color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:600;}
   .main-area{flex:1;display:flex;overflow:hidden;padding:0 18px 10px;gap:8px;}
   .task-section{flex:1;display:flex;flex-direction:column;overflow:hidden;}
@@ -245,19 +251,19 @@ ${chartScript}
   .section-bar h3{font-size:12px;font-weight:600;}
   .filter-info{font-size:11px;color:var(--text2);}
   .filter-clear{font-size:11px;color:var(--blue);cursor:pointer;text-decoration:underline;}
-  .tbl-wrap{flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:8px;}
+  .tbl-wrap{flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:var(--shadow);}
   table{width:100%;border-collapse:collapse;}
   thead th{position:sticky;top:0;background:var(--surface2);padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;}
   tbody tr{border-bottom:1px solid var(--border);cursor:pointer;}
   tbody tr:hover{background:var(--surface2);}
-  tbody tr.selected{background:#1a2744;border-left:2px solid var(--blue);}
+  tbody tr.selected{background:#eef2ff;border-left:2px solid var(--blue);}
   tbody td{padding:5px 8px;font-size:12px;vertical-align:top;}
   .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:500;margin:1px 2px;}
-  .pill.risk{background:#3b1a1a;color:#ef9a9a;} .pill.issue{background:#1a2a3b;color:#90caf9;}
-  .pill.slip{background:#3b2600;color:#ffb74d;} .pill.done{background:#1a2e1a;color:#a5d6a7;}
+  .pill.risk{background:#fff0f3;color:#bf4b63;} .pill.issue{background:#eef6ff;color:#2f67c8;}
+  .pill.slip{background:#fff6e6;color:#b97712;} .pill.done{background:#ecfdf5;color:#1f7a59;}
   .t-name{font-weight:500;max-width:240px;} .t-ws{font-size:10px;color:var(--text2);margin-top:1px;}
   .empty{text-align:center;padding:30px;color:var(--text2);}
-  .dep-panel{width:0;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;transition:width .2s ease;display:flex;flex-direction:column;}
+  .dep-panel{width:0;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:width .2s ease;display:flex;flex-direction:column;box-shadow:var(--shadow);}
   .dep-panel.open{width:420px;}
   .dep-header{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
   .dep-header h4{font-size:12px;font-weight:600;}
@@ -270,9 +276,9 @@ ${chartScript}
   .dep-col{display:flex;flex-direction:column;gap:6px;min-width:110px;} .dep-col.center{min-width:130px;}
   .dep-arrows{display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 6px;gap:6px;}
   .dep-box{border-radius:6px;padding:6px 8px;font-size:11px;line-height:1.3;}
-  .dep-box.pred{background:#1e2a1e;border:1px solid #2e4a2e;color:#a5d6a7;} .dep-box.pred.slipped{background:#2a1e1e;border-color:#4a2e2e;color:#ef9a9a;}
-  .dep-box.focal{background:#1a2744;border:2px solid var(--blue);color:var(--text);font-weight:600;} .dep-box.focal.slipped{background:#2a1f0e;border-color:#ff9800;color:#ffb74d;}
-  .dep-box.suc{background:#1e1e2a;border:1px solid #2e2e4a;color:#90caf9;} .dep-box.suc.slipped{background:#2a1e1e;border-color:#4a2e2e;color:#ef9a9a;}
+  .dep-box.pred{background:#effaf4;border:1px solid #bfe7d1;color:#22684c;} .dep-box.pred.slipped{background:#fff1f4;border-color:#f0b8c3;color:#b64960;}
+  .dep-box.focal{background:#eef2ff;border:2px solid var(--blue);color:var(--text);font-weight:600;} .dep-box.focal.slipped{background:#fff7ed;border-color:#f59e0b;color:#b45309;}
+  .dep-box.suc{background:#eff6ff;border:1px solid #bfdbfe;color:#285ca6;} .dep-box.suc.slipped{background:#fff1f4;border-color:#f0b8c3;color:#b64960;}
   .dep-box .box-name{font-weight:500;margin-bottom:2px;} .dep-box .box-meta{font-size:10px;color:var(--text2);} .dep-box .box-slip{font-size:10px;color:#ffb74d;margin-top:2px;}
   .arr{font-size:18px;color:var(--text2);line-height:1;}
   .dep-section{margin-bottom:14px;} .dep-section h5{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:6px;}
@@ -281,17 +287,14 @@ ${chartScript}
   /* gantt */
   .gantt-outer{flex:1;display:flex;flex-direction:column;padding:0 18px 10px;overflow:hidden;}
   .gantt-controls{display:flex;align-items:center;gap:10px;padding:8px 0 6px;flex-shrink:0;flex-wrap:wrap;}
-  .gantt-controls select{background:#fff;color:#1f2937;border:1px solid #d1d5db;border-radius:6px;padding:4px 8px;font-size:12px;}
+  .gantt-controls select{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 8px;font-size:12px;}
   .gantt-controls label{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;}
   .gantt-controls input[type=checkbox]{accent-color:var(--blue);}
   .gantt-legend{display:flex;gap:12px;font-size:11px;color:var(--text2);margin-left:auto;flex-wrap:wrap;}
   .gantt-legend span{display:flex;align-items:center;gap:4px;}
   .gantt-count{font-size:11px;color:var(--text2);font-weight:600;}
-  .gantt-body{flex:1;display:flex;overflow:hidden;border:1px solid #d1d5db;border-radius:8px;background:#fff;}
-  .gantt-names{width:240px;flex-shrink:0;overflow:hidden;border-right:1px solid #d1d5db;display:flex;flex-direction:column;background:#fff;}
-  .gantt-name-hdr{height:36px;background:#f8fafc;border-bottom:1px solid #d1d5db;display:flex;align-items:center;padding:0 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#475569;flex-shrink:0;}
-  .gantt-name-list{flex:1;overflow-y:hidden;}
-  .gantt-chart-wrap{flex:1;overflow:auto;background:#fff;}
+  .gantt-body{flex:1;display:flex;overflow:hidden;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:var(--shadow);}
+  .gantt-plot{flex:1;min-height:640px;background:var(--surface);}
   .gantt-scale-note{font-size:11px;color:var(--text2);font-style:italic;}
   #ganttTip{position:fixed;background:#ffffff;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:11px;pointer-events:none;display:none;z-index:9999;max-width:360px;line-height:1.6;white-space:pre-wrap;color:#0f172a;box-shadow:0 6px 20px rgba(0,0,0,.15);}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
@@ -402,13 +405,7 @@ ${chartScript}
       </div>
     </div>
     <div class="gantt-body">
-      <div class="gantt-names">
-        <div class="gantt-name-hdr">Task / Milestone</div>
-        <div class="gantt-name-list" id="ganttNames"></div>
-      </div>
-      <div class="gantt-chart-wrap" id="ganttChartWrap">
-        <div id="ganttSvgWrap"></div>
-      </div>
+      <div class="gantt-plot" id="ganttPlot"></div>
     </div>
   </div>
 </div>
@@ -440,30 +437,41 @@ function renderMilestoneMini() {
     return;
   }
 
-  const dates = milestones.map(m => new Date(m.finish || m.start).getTime()).filter(n => !isNaN(n));
-  const min = Math.min.apply(null, dates);
-  const max = Math.max.apply(null, dates);
-  const range = Math.max(1, max - min);
-  const rowH = 14;
-  const svgH = 24 + milestones.length * rowH;
-  const toX = date => 92 + Math.round(((new Date(date).getTime() - min) / range) * 170);
-
-  const svg = [];
-  svg.push('<svg viewBox="0 0 270 ' + svgH + '" preserveAspectRatio="none">');
-  svg.push('<rect width="270" height="' + svgH + '" fill="#1a1d27"/>');
-  svg.push('<text x="92" y="12" fill="#94a3b8" font-size="8" font-family="sans-serif">' + fmtShort(new Date(min).toISOString()) + '</text>');
-  svg.push('<text x="215" y="12" fill="#94a3b8" font-size="8" font-family="sans-serif">' + fmtShort(new Date(max).toISOString()) + '</text>');
-  svg.push('<line x1="92" y1="16" x2="250" y2="16" stroke="#334155" stroke-width="1"/>');
-  milestones.forEach((m, i) => {
-    const y = 26 + i * rowH;
-    const x = toX(m.finish || m.start);
-    const issue = m.linkedRisks.length > 0;
-    svg.push('<text x="4" y="' + y + '" fill="#e5e7eb" font-size="8" font-family="sans-serif">' + esc(trunc(m.name, 18)) + '</text>');
-    svg.push('<polygon points="' + x + ',' + (y - 7) + ' ' + (x + 6) + ',' + (y - 1) + ' ' + x + ',' + (y + 5) + ' ' + (x - 6) + ',' + (y - 1) + '" fill="' + (issue ? '#ef4444' : '#22c55e') + '" stroke="' + (issue ? '#7f1d1d' : '#14532d') + '" stroke-width="1"/>');
-    if (issue) svg.push('<circle cx="' + (x + 10) + '" cy="' + (y - 4) + '" r="3" fill="#f59e0b"/>');
-  });
-  svg.push('</svg>');
-  host.innerHTML = svg.join("");
+  const trace = {
+    type: 'scatter',
+    mode: 'markers+text',
+    x: milestones.map(m => m.finish || m.start),
+    y: milestones.map(m => trunc(m.name, 18)),
+    text: milestones.map(m => m.linkedRisks.length ? '⚠' : '◆'),
+    textposition: 'middle right',
+    marker: {
+      size: 12,
+      symbol: 'diamond',
+      color: milestones.map(m => m.linkedRisks.length ? '#d85b72' : '#2f8f6b'),
+      line: { width: 1, color: milestones.map(m => m.linkedRisks.length ? '#b43b55' : '#256f54') }
+    },
+    hovertemplate: milestones.map(m => '<b>' + esc(m.name) + '</b><br>' + fmt(m.finish || m.start) + '<extra></extra>')
+  };
+  const layout = {
+    margin: { l: 82, r: 8, t: 8, b: 18 },
+    paper_bgcolor: '#ffffff',
+    plot_bgcolor: '#ffffff',
+    xaxis: {
+      type: 'date',
+      showgrid: true,
+      gridcolor: '#e7edf4',
+      tickfont: { size: 9, color: '#5f7185' },
+      zeroline: false
+    },
+    yaxis: {
+      automargin: true,
+      tickfont: { size: 9, color: '#334155' },
+      autorange: 'reversed'
+    },
+    showlegend: false,
+    height: 140
+  };
+  Plotly.react(host, [trace], layout, { displayModeBar: false, responsive: true, staticPlot: true });
 }
 
 // ── Tab switching ──────────────────────────────────────────────────────────
@@ -500,8 +508,8 @@ function init() {
     el.innerHTML = \`<span class="val">\${esc(String(k.val))}</span><span class="lbl">\${esc(k.label)}</span>\`;
     strip.appendChild(el);
   });
-  const statusColors = DATA.statusBreakdown.map((_,i) => \`hsl(\${(i*47+200)%360},60%,55%)\`);
-  new Chart(document.getElementById("statusChart"),{type:"doughnut",data:{labels:DATA.statusBreakdown.map(x=>x.s),datasets:[{data:DATA.statusBreakdown.map(x=>x.c),backgroundColor:statusColors,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{color:"#9096b8",font:{size:10},boxWidth:10,padding:6}}}}});
+  const statusColors = ['#7b8cff','#5aa9e6','#d85b72','#c7922a','#2f8f6b','#99a8b8'];
+  new Chart(document.getElementById("statusChart"),{type:"doughnut",data:{labels:DATA.statusBreakdown.map(x=>x.s),datasets:[{data:DATA.statusBreakdown.map(x=>x.c),backgroundColor:DATA.statusBreakdown.map((_,i)=>statusColors[i%statusColors.length]),borderColor:'#ffffff',borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{color:"#5f7185",font:{size:10},boxWidth:10,padding:6}}}}});
   renderMilestoneMini();
   const typeList = document.getElementById("typeList");
   DATA.riskTypeBreakdown.forEach(rt => {
@@ -663,8 +671,7 @@ function renderGantt() {
   document.getElementById("ganttScaleNote").textContent = "Grouped by workstream → risk type • scale: " + scale;
 
   if (!tasks.length && !milestones.length) {
-    document.getElementById("ganttNames").innerHTML = '<div style="padding:20px;color:var(--text2);font-size:12px">No tasks match filters.</div>';
-    document.getElementById("ganttSvgWrap").innerHTML = "";
+    document.getElementById("ganttPlot").innerHTML = '<div style="padding:20px;color:var(--text2);font-size:12px">No tasks match filters.</div>';
     return;
   }
 
@@ -687,15 +694,6 @@ function renderGantt() {
   }
 
   const totalDays = Math.max(1, (maxDate - minDate) / 86400000);
-  const ppd = scale === "days"
-    ? Math.max(3.5, Math.min(12, 1700 / totalDays))
-    : scale === "weeks"
-      ? Math.max(1.8, Math.min(7, 1450 / totalDays))
-      : Math.max(1.1, Math.min(5.5, 1250 / totalDays));
-  const ROW_H = 30;
-  const HDR_H = 38;
-  const hasMilestoneLane = milestones.length > 0;
-  const extraRows = hasMilestoneLane ? 1 : 0;
   const groupedTasks = [];
   const workstreams = [...new Set(tasks.map(t => t.workstream))].sort();
   workstreams.forEach(ws => {
@@ -707,16 +705,6 @@ function renderGantt() {
       inWs.filter(t => topRiskKey(t) === group).forEach(t => groupedTasks.push({ kind: "task", task: t }));
     });
   });
-  const svgW = Math.ceil(totalDays * ppd) + 80;
-  const svgH = HDR_H + (groupedTasks.length + extraRows) * ROW_H;
-
-  const toX = d => {
-    if (!d) return null;
-    const ms = new Date(d).getTime();
-    if (isNaN(ms)) return null;
-    return Math.round((ms - minDate.getTime()) / 86400000 * ppd) + 20;
-  };
-
   const sevScore = s => {
     const v = String(s || "").toLowerCase();
     if (/(critical|very high|urgent|severe)/.test(v)) return 4;
@@ -736,193 +724,159 @@ function renderGantt() {
     const sevMark = sev >= 3 ? "🔴" : sev === 2 ? "🟠" : "🟡";
     return core + sevMark;
   };
-
-  const todayX = toX(new Date().toISOString().slice(0, 10));
-
-  const ticks = [];
-  const cur = new Date(minDate);
-  if (scale === "days") {
-    while (cur < maxDate) {
-      ticks.push({ x: toX(cur.toISOString().slice(0, 10)), lbl: cur.toLocaleDateString("en-US", { month: "short", day: "numeric" }) });
-      cur.setDate(cur.getDate() + 7);
-    }
-  } else if (scale === "weeks") {
-    while (cur < maxDate) {
-      ticks.push({ x: toX(cur.toISOString().slice(0, 10)), lbl: "Wk of " + cur.toLocaleDateString("en-US", { month: "short", day: "numeric" }) });
-      cur.setDate(cur.getDate() + 7);
-    }
-  } else {
-    while (cur < maxDate) {
-      ticks.push({ x: toX(cur.toISOString().slice(0, 10)), lbl: cur.toLocaleDateString("en-US", { month: "short", year: "2-digit" }) });
-      cur.setMonth(cur.getMonth() + 1);
-    }
-  }
-
-  const svg = [];
-  svg.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + svgW + '" height="' + svgH + '" style="display:block;min-width:' + svgW + 'px">');
-  svg.push('<rect width="' + svgW + '" height="' + svgH + '" fill="#ffffff"/>');
-  svg.push('<rect width="' + svgW + '" height="' + HDR_H + '" fill="#f8fafc"/>');
-
-  ticks.forEach(m => {
-    svg.push('<line x1="' + m.x + '" y1="0" x2="' + m.x + '" y2="' + svgH + '" stroke="#e2e8f0" stroke-width="1"/>');
-    svg.push('<text x="' + (m.x + 4) + '" y="15" fill="#475569" font-size="10" font-family="sans-serif">' + m.lbl + '</text>');
+  const rows = [];
+  if (showMiles && milestones.length) rows.push({ kind: 'milestoneHeader', label: '🏁 Milestones' });
+  milestones.forEach(m => rows.push({ kind: 'milestone', label: '  ◆ ' + trunc(m.name, 28), task: m }));
+  groupedTasks.forEach(entry => {
+    if (entry.kind === 'lane') rows.push({ kind: 'lane', label: '🧭 ' + entry.label, workstream: entry.workstream });
+    else if (entry.kind === 'riskHeader') rows.push({ kind: 'riskHeader', label: '   ⚑ ' + entry.label, workstream: entry.workstream });
+    else rows.push({ kind: 'task', label: '      • ' + trunc(entry.task.name, 36), task: entry.task });
   });
 
-  svg.push('<line x1="0" y1="' + HDR_H + '" x2="' + svgW + '" y2="' + HDR_H + '" stroke="#cbd5e1"/>');
+  const yOrder = rows.map(r => r.label);
+  const taskRows = rows.filter(r => r.kind === 'task');
+  const milestoneRows = rows.filter(r => r.kind === 'milestone');
+  const laneRows = rows.filter(r => r.kind === 'lane');
+  const riskRows = rows.filter(r => r.kind === 'riskHeader');
+  const milestoneHeaderRows = rows.filter(r => r.kind === 'milestoneHeader');
 
-  if (todayX != null) {
-    svg.push('<line x1="' + todayX + '" y1="' + HDR_H + '" x2="' + todayX + '" y2="' + svgH + '" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>');
-    svg.push('<text x="' + (todayX + 3) + '" y="' + (HDR_H - 6) + '" fill="#dc2626" font-size="9" font-family="sans-serif">Today</text>');
+  const rangeMs = Math.max(86400000, maxDate.getTime() - minDate.getTime());
+  const fullSpan = new Array(laneRows.length).fill(rangeMs);
+  const riskSpan = new Array(riskRows.length).fill(rangeMs);
+  const milestoneHeaderSpan = new Array(milestoneHeaderRows.length).fill(rangeMs);
+  const taskDurations = taskRows.map(r => Math.max(86400000, new Date(r.task.finish).getTime() - new Date(r.task.start || r.task.finish).getTime() + 86400000));
+
+  const taskText = taskRows.map(r => {
+    const icon = riskIcon(r.task);
+    const dep = ((r.task.predIds || []).length || (r.task.sucIds || []).length) ? ' ↑' + (r.task.predIds || []).length + ' ↓' + (r.task.sucIds || []).length : '';
+    return fmtShort(r.task.start || r.task.finish) + ' → ' + fmtShort(r.task.finish) + (icon ? '  ' + icon : '') + dep;
+  });
+
+  const traces = [];
+  if (milestoneHeaderRows.length) {
+    traces.push({
+      type: 'bar',
+      orientation: 'h',
+      y: milestoneHeaderRows.map(r => r.label),
+      base: milestoneHeaderRows.map(() => minDate),
+      x: milestoneHeaderSpan,
+      marker: { color: '#ecfdf5', line: { color: '#b7e5cf', width: 1 } },
+      hoverinfo: 'skip',
+      showlegend: false,
+      textposition: 'none'
+    });
   }
-
-  const nameRows = [];
-
-  if (hasMilestoneLane) {
-    const laneY = HDR_H;
-    const laneMidY = laneY + ROW_H / 2;
-
-    svg.push('<rect x="0" y="' + laneY + '" width="' + svgW + '" height="' + ROW_H + '" fill="#f0fdf4"/>');
-    svg.push('<line x1="0" y1="' + (laneY + ROW_H) + '" x2="' + svgW + '" y2="' + (laneY + ROW_H) + '" stroke="#bbf7d0"/>');
-    nameRows.push('<div style="height:' + ROW_H + 'px;line-height:' + ROW_H + 'px;padding:0 8px;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#f0fdf4;color:#166534;border-bottom:1px solid #bbf7d0" title="Milestones lane">🏁 Milestones</div>');
-
-    milestones.forEach((m, idx) => {
-      const mx = toX(m.finish) || toX(m.start);
-      if (mx == null) return;
-      const rowOffset = idx % 2 === 0 ? -8 : 8;
-      const my = laneMidY + rowOffset;
-      const d = 7;
-      const mc = m.isSlipped ? "#ef4444" : "#16a34a";
-      const ms = m.isSlipped ? "#991b1b" : "#14532d";
-
-      const mTip = [
-        "#" + (m.uid || "?") + " " + m.name,
-        "Milestone · " + m.workstream,
-        "Date: " + fmt(m.finish || m.start),
-        m.slipDays ? ("⚠ Slipped +" + m.slipDays + " days") : ""
-      ].filter(Boolean).join("\\n").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-      svg.push('<polygon points="' + mx + ',' + (my - d) + ' ' + (mx + d) + ',' + my + ' ' + mx + ',' + (my + d) + ' ' + (mx - d) + ',' + my + '" fill="' + mc + '" stroke="' + ms + '" stroke-width="1.2"><title>' + mTip + '</title></polygon>');
-      svg.push('<text x="' + (mx + d + 4) + '" y="' + (my + 3) + '" fill="' + mc + '" font-size="9" font-family="sans-serif" font-weight="600">' + esc(trunc(m.name, 18)) + '</text>');
+  if (laneRows.length) {
+    traces.push({
+      type: 'bar',
+      orientation: 'h',
+      y: laneRows.map(r => r.label),
+      base: laneRows.map(() => minDate),
+      x: fullSpan,
+      marker: { color: '#eaf1ff', line: { color: '#c6d7ff', width: 1 } },
+      hoverinfo: 'skip',
+      showlegend: false,
+      textposition: 'none'
+    });
+  }
+  if (riskRows.length) {
+    traces.push({
+      type: 'bar',
+      orientation: 'h',
+      y: riskRows.map(r => r.label),
+      base: riskRows.map(() => minDate),
+      x: riskSpan,
+      marker: { color: '#f8fafc', line: { color: '#d7e0ea', width: 1 } },
+      hoverinfo: 'skip',
+      showlegend: false,
+      textposition: 'none'
+    });
+  }
+  if (taskRows.length) {
+    traces.push({
+      type: 'bar',
+      orientation: 'h',
+      y: taskRows.map(r => r.label),
+      base: taskRows.map(r => r.task.start || r.task.finish),
+      x: taskDurations,
+      marker: {
+        color: taskRows.map(r => r.task.isSlipped ? '#d97757' : r.task.pct > 0 ? '#5b7cff' : '#8fa1b5'),
+        line: { color: taskRows.map(r => r.task.isSlipped ? '#b45b42' : r.task.pct > 0 ? '#3f5de0' : '#6f8196'), width: 1 }
+      },
+      text: taskText,
+      textposition: 'inside',
+      insidetextanchor: 'middle',
+      textfont: { color: '#ffffff', size: 10 },
+      hovertemplate: taskRows.map(r => '<b>' + esc(r.task.name) + '</b><br>Workstream: ' + esc(r.task.workstream) + '<br>Start: ' + fmt(r.task.start) + '<br>Finish: ' + fmt(r.task.finish) + (r.task.baselineFinish ? '<br>Baseline: ' + fmt(r.task.baselineFinish) : '') + (r.task.linkedRisks.length ? '<br>Linked: ' + r.task.linkedRisks.length + ' risk(s)/issue(s)' : '') + '<extra></extra>'),
+      showlegend: false,
+      cliponaxis: false
+    });
+  }
+  if (milestoneRows.length) {
+    traces.push({
+      type: 'scatter',
+      mode: 'markers+text',
+      x: milestoneRows.map(r => r.task.finish || r.task.start),
+      y: milestoneRows.map(r => r.label),
+      text: milestoneRows.map(r => (r.task.linkedRisks.length ? '⚠ ' : '') + fmtShort(r.task.finish || r.task.start)),
+      textposition: 'middle right',
+      marker: {
+        size: 13,
+        symbol: 'diamond',
+        color: milestoneRows.map(r => r.task.isSlipped ? '#d85b72' : '#2f8f6b'),
+        line: { width: 1, color: milestoneRows.map(r => r.task.isSlipped ? '#b43b55' : '#256f54') }
+      },
+      hovertemplate: milestoneRows.map(r => '<b>' + esc(r.task.name) + '</b><br>Milestone<br>Date: ' + fmt(r.task.finish || r.task.start) + '<extra></extra>'),
+      showlegend: false
     });
   }
 
-  groupedTasks.forEach((entry, i) => {
-    const rowIndex = i + extraRows;
-    const y = HDR_H + rowIndex * ROW_H;
-    if (entry.kind === "lane") {
-      svg.push('<rect x="0" y="' + y + '" width="' + svgW + '" height="' + ROW_H + '" fill="#dbeafe"/>');
-      svg.push('<line x1="0" y1="' + (y + ROW_H) + '" x2="' + svgW + '" y2="' + (y + ROW_H) + '" stroke="#93c5fd"/>');
-      nameRows.push('<div style="height:' + ROW_H + 'px;line-height:' + ROW_H + 'px;padding:0 8px;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#dbeafe;color:#1d4ed8;border-bottom:1px solid #93c5fd" title="' + esc(entry.workstream) + '">🧭 ' + esc(entry.label) + '</div>');
-      return;
-    }
-    if (entry.kind === "riskHeader") {
-      svg.push('<rect x="0" y="' + y + '" width="' + svgW + '" height="' + ROW_H + '" fill="#f8fafc"/>');
-      svg.push('<line x1="0" y1="' + (y + ROW_H) + '" x2="' + svgW + '" y2="' + (y + ROW_H) + '" stroke="#cbd5e1"/>');
-      nameRows.push('<div style="height:' + ROW_H + 'px;line-height:' + ROW_H + 'px;padding:0 16px;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#f8fafc;color:#475569;border-bottom:1px solid #cbd5e1" title="' + esc(entry.label) + '">⚑ ' + esc(entry.label) + '</div>');
-      return;
-    }
-    const t = entry.task;
-    const rowBg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+  const layout = {
+    margin: { l: 250, r: 26, t: 18, b: 40 },
+    paper_bgcolor: '#ffffff',
+    plot_bgcolor: '#ffffff',
+    barmode: 'overlay',
+    bargap: 0.28,
+    height: Math.max(680, rows.length * 28 + 60),
+    xaxis: {
+      type: 'date',
+      range: [minDate.toISOString(), maxDate.toISOString()],
+      showgrid: true,
+      gridcolor: '#e7edf4',
+      tickfont: { color: '#5f7185', size: 10 },
+      zeroline: false,
+      tickformat: scale === 'months' ? '%b %y' : '%b %-d',
+      dtick: scale === 'months' ? 'M1' : 7 * 24 * 60 * 60 * 1000
+    },
+    yaxis: {
+      automargin: true,
+      categoryorder: 'array',
+      categoryarray: yOrder,
+      autorange: 'reversed',
+      tickfont: { color: '#334155', size: 11 },
+      showgrid: false
+    },
+    shapes: [{
+      type: 'line',
+      x0: new Date().toISOString().slice(0, 10),
+      x1: new Date().toISOString().slice(0, 10),
+      y0: 0,
+      y1: 1,
+      yref: 'paper',
+      line: { color: '#d85b72', width: 2, dash: 'dot' }
+    }],
+    annotations: [{
+      x: new Date().toISOString().slice(0, 10),
+      y: 1.05,
+      yref: 'paper',
+      text: 'Today',
+      showarrow: false,
+      font: { color: '#b43b55', size: 10 }
+    }],
+    showlegend: false
+  };
 
-    svg.push('<rect x="0" y="' + y + '" width="' + svgW + '" height="' + ROW_H + '" fill="' + rowBg + '"/>');
-    svg.push('<line x1="0" y1="' + (y + ROW_H) + '" x2="' + svgW + '" y2="' + (y + ROW_H) + '" stroke="#e2e8f0"/>');
-
-    const x1 = toX(t.start);
-    const x2 = toX(t.finish);
-    const xBL = t.baselineFinish ? toX(t.baselineFinish) : null;
-
-    const shownPred = (t.predIds || []).filter(id => visibleIds.has(id)).length;
-    const shownSuc = (t.sucIds || []).filter(id => visibleIds.has(id)).length;
-
-    const tip = [
-      "#" + (t.uid || "?") + " " + t.name,
-      "Workstream: " + t.workstream,
-      "Start: " + fmt(t.start) + " | Finish: " + fmt(t.finish),
-      t.baselineFinish ? ("Baseline finish: " + fmt(t.baselineFinish)) : "",
-      t.slipDays ? ("⚠ Slipped +" + t.slipDays + " days") : "",
-      (shownPred || shownSuc) ? ("Shown links: ↑" + shownPred + " ↓" + shownSuc) : ""
-    ].filter(Boolean).join("\\n").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-    const barColor = t.isSlipped ? "#ea580c" : t.pct > 0 ? "#2563eb" : "#64748b";
-    const bdrColor = t.isSlipped ? "#c2410c" : t.pct > 0 ? "#1d4ed8" : "#475569";
-
-    if (x1 != null && x2 != null) {
-      const bw = Math.max(8, x2 - x1);
-      svg.push('<rect x="' + x1 + '" y="' + (y + 8) + '" width="' + bw + '" height="' + (ROW_H - 16) + '" rx="3" fill="' + barColor + '" stroke="' + bdrColor + '" stroke-width="0.8"><title>' + tip + '</title></rect>');
-      if (t.pct > 0 && t.pct < 100) {
-        svg.push('<rect x="' + x1 + '" y="' + (y + 8) + '" width="' + Math.max(4, Math.round(bw * t.pct / 100)) + '" height="' + (ROW_H - 16) + '" rx="3" fill="#60a5fa" opacity="0.9"/>');
-      }
-      if (xBL && Math.abs(xBL - x2) > 3) {
-        svg.push('<line x1="' + xBL + '" y1="' + (y + 5) + '" x2="' + xBL + '" y2="' + (y + ROW_H - 5) + '" stroke="#f59e0b" stroke-width="2" opacity="0.85"><title>Baseline: ' + fmt(t.baselineFinish) + '</title></line>');
-      }
-
-      if (bw > 70) {
-        svg.push('<text x="' + (x1 + 6) + '" y="' + (y + 20) + '" fill="#ffffff" font-size="9" font-family="sans-serif">' + fmtShort(t.start) + '</text>');
-        svg.push('<text x="' + (x1 + bw - 34) + '" y="' + (y + 20) + '" fill="#ffffff" font-size="9" font-family="sans-serif">' + fmtShort(t.finish) + '</text>');
-      } else if (bw > 34) {
-        svg.push('<text x="' + (x1 + 4) + '" y="' + (y + 20) + '" fill="#ffffff" font-size="8" font-family="sans-serif">' + fmtShort(t.finish) + '</text>');
-      }
-
-      const icon = riskIcon(t);
-      if (icon && bw > 40) {
-        const badgeW = 24;
-        const badgeX = x1 + bw - badgeW - 4;
-        svg.push('<rect x="' + badgeX + '" y="' + (y + 10) + '" width="' + badgeW + '" height="12" rx="6" fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.35)" stroke-width="0.7"/>');
-        svg.push('<text x="' + (badgeX + 4) + '" y="' + (y + 19) + '" fill="#ffffff" font-size="9" font-family="sans-serif" font-weight="700">' + icon + '</text>');
-      }
-
-      if ((shownPred || shownSuc) && bw > 64) {
-        svg.push('<text x="' + (x1 + Math.min(80, bw / 2)) + '" y="' + (y + 20) + '" fill="#dbeafe" font-size="8" font-family="sans-serif">↑' + shownPred + ' ↓' + shownSuc + '</text>');
-      }
-    }
-
-    const nc = t.isSlipped ? "#9a3412" : "#0f172a";
-    const lead = t.linkedRisks.length > 0 ? "⚠" : "•";
-    nameRows.push('<div style="height:' + ROW_H + 'px;line-height:' + ROW_H + 'px;padding:0 8px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:' + rowBg + ';color:' + nc + ';border-bottom:1px solid #e2e8f0" title="' + esc(t.name) + ' — ' + esc(t.workstream) + '">' + lead + ' ' + esc(trunc(t.name, 26)) + '</div>');
-  });
-
-  svg.push("</svg>");
-
-  document.getElementById("ganttNames").innerHTML = nameRows.join("");
-  document.getElementById("ganttSvgWrap").innerHTML = svg.join("");
-
-  const cw = document.getElementById("ganttChartWrap");
-  const nl = document.getElementById("ganttNames");
-  cw.onscroll = () => { nl.scrollTop = cw.scrollTop; };
-  nl.onscroll = () => { cw.scrollTop = nl.scrollTop; };
-
-  const tip2 = document.getElementById("ganttTip");
-  const svgEl = document.getElementById("ganttSvgWrap").querySelector("svg");
-  if (svgEl) {
-    svgEl.addEventListener("mousemove", e => {
-      const el = e.target.closest("[title]");
-      if (el && el.getAttribute("title")) {
-        tip2.style.display = "block";
-        tip2.style.left = (e.clientX + 14) + "px";
-        tip2.style.top = (e.clientY - 10) + "px";
-        tip2.innerHTML = el.getAttribute("title")
-          .replace(/&amp;/g, "&")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/\\n/g, "<br>")
-          .replace(/⚑/g, "<span style='color:#dc2626'>⚑</span>")
-          .replace(/⚠/g, "<span style='color:#b45309'>⚠</span>");
-      } else {
-        tip2.style.display = "none";
-      }
-    });
-    svgEl.addEventListener("mouseleave", () => { tip2.style.display = "none"; });
-  }
-
-  setTimeout(() => {
-    const cw2 = document.getElementById("ganttChartWrap");
-    if (!cw2) return;
-    const line = cw2.querySelector("line[stroke='#dc2626']");
-    if (line) {
-      const x = parseFloat(line.getAttribute("x1") || 0);
-      cw2.scrollLeft = Math.max(0, x - 320);
-    }
-  }, 80);
+  Plotly.react(document.getElementById('ganttPlot'), traces, layout, { displayModeBar: false, responsive: true });
 }
 
 init();
