@@ -16,6 +16,7 @@
     "dashboard:schedule": "node scripts/refresh-schedule-dashboard.js",
     "dashboard:html": "node scripts/generate-dashboard-html.js",
     "dashboard:pages": "npm run dashboard:html && node scripts/prepare-github-pages.js",
+    "dashboard:publish": "node scripts/publish-dashboard-snapshot.js",
     "categorize:risks": "node scripts/categorize-risks.js",
     "categorize:risks:dry": "node scripts/categorize-risks.js --dry-run"
   },

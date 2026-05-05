@@ -440,10 +440,24 @@ ${plotlyScript}
   .gantt-plot{flex:1;min-height:640px;background:var(--surface);}
   .gantt-scale-note{font-size:11px;color:var(--text2);font-style:italic;}
   #ganttTip{position:fixed;background:#ffffff;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:11px;pointer-events:none;display:none;z-index:9999;max-width:360px;line-height:1.6;white-space:pre-wrap;color:#0f172a;box-shadow:0 6px 20px rgba(0,0,0,.15);}
+  .loading-overlay{position:fixed;inset:0;background:rgba(244,247,251,.96);display:flex;align-items:center;justify-content:center;z-index:10000;transition:opacity .25s ease;}
+  .loading-overlay.hide{opacity:0;pointer-events:none;}
+  .loading-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;min-width:300px;box-shadow:var(--shadow);text-align:center;}
+  .loading-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;}
+  .loading-sub{font-size:12px;color:var(--text2);margin-bottom:10px;}
+  .loading-spin{width:24px;height:24px;border:3px solid #d8e2ee;border-top-color:var(--blue);border-radius:50%;margin:0 auto 8px;animation:spin .85s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
 </head>
 <body>
+<div id="loadingOverlay" class="loading-overlay" aria-live="polite">
+  <div class="loading-card">
+    <div class="loading-title">Preparing dashboard…</div>
+    <div class="loading-spin"></div>
+    <div id="loadingSub" class="loading-sub">Loading tasks, charts, and plan explorer.</div>
+  </div>
+</div>
 <header>
   <h1>📊 Ametek SAP S4 — Schedule Dashboard</h1>
   <span id="healthBadge" class="health-badge">Loading…</span>
@@ -621,6 +635,18 @@ const esc = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replac
 const trunc = (s,n) => s && s.length>n ? s.slice(0,n)+"…" : (s||"");
 const riskKey = r => (r.type || "Risk") + " — " + (r.category || "(Uncategorized)");
 const topRiskKey = task => task.linkedRisks.length ? riskKey(task.linkedRisks[0]) : "No linked risk";
+
+function setLoadingText(msg) {
+  const el = document.getElementById('loadingSub');
+  if (el && msg) el.textContent = msg;
+}
+
+function hideLoading() {
+  const overlay = document.getElementById('loadingOverlay');
+  if (!overlay) return;
+  overlay.classList.add('hide');
+  setTimeout(() => overlay.remove(), 280);
+}
 
 function buildPlanState() {
   const byId = new Map(DATA.tasks.map(t => [t.id, {
@@ -949,6 +975,7 @@ function renderActions() {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
+  setLoadingText('Rendering KPI panels and charts…');
   const m = DATA.metrics;
   document.getElementById("healthBadge").textContent = m.healthLabel;
   document.getElementById("genTime").textContent = "Generated " + new Date(DATA.generatedAt).toLocaleString();
@@ -995,6 +1022,8 @@ function init() {
     });
   }
   renderTasks();
+  setLoadingText('Finalizing view…');
+  requestAnimationFrame(() => hideLoading());
 }
 
 // ── Tasks tab ─────────────────────────────────────────────────────────────
