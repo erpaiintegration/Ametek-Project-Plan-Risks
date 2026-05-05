@@ -233,6 +233,8 @@ ${chartScript}
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;overflow:hidden;}
   .panel-title{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:6px;flex-shrink:0;}
   .chart-wrap{flex:1;position:relative;min-height:0;}
+  .mini-milestone{width:100%;height:100%;overflow:hidden;}
+  .mini-milestone svg{width:100%;height:100%;display:block;}
   .type-list{display:flex;flex-direction:column;gap:4px;overflow-y:auto;flex:1;}
   .type-tile{display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;transition:border-color .12s,background .12s;user-select:none;}
   .type-tile:hover{border-color:var(--accent);} .type-tile.active{border-color:var(--blue);background:#1a2744;}
@@ -259,6 +261,8 @@ ${chartScript}
   .dep-panel.open{width:420px;}
   .dep-header{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
   .dep-header h4{font-size:12px;font-weight:600;}
+  .dep-head-main{display:flex;align-items:center;gap:8px;min-width:0;}
+  .dep-head-badge{display:inline-flex;align-items:center;gap:4px;background:#2b341a;border:1px solid #4d7c0f;color:#d9f99d;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap;}
   .dep-close{cursor:pointer;color:var(--text2);font-size:16px;line-height:1;padding:0 4px;}
   .dep-close:hover{color:var(--text);}
   .dep-body{flex:1;overflow-y:auto;padding:14px;}
@@ -288,6 +292,7 @@ ${chartScript}
   .gantt-name-hdr{height:36px;background:#f8fafc;border-bottom:1px solid #d1d5db;display:flex;align-items:center;padding:0 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#475569;flex-shrink:0;}
   .gantt-name-list{flex:1;overflow-y:hidden;}
   .gantt-chart-wrap{flex:1;overflow:auto;background:#fff;}
+  .gantt-scale-note{font-size:11px;color:var(--text2);font-style:italic;}
   #ganttTip{position:fixed;background:#ffffff;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:11px;pointer-events:none;display:none;z-index:9999;max-width:360px;line-height:1.6;white-space:pre-wrap;color:#0f172a;box-shadow:0 6px 20px rgba(0,0,0,.15);}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
@@ -312,8 +317,8 @@ ${chartScript}
       <div class="chart-wrap"><canvas id="statusChart"></canvas></div>
     </div>
     <div class="panel">
-      <div class="panel-title">Schedule Pressure by Workstream</div>
-      <div class="chart-wrap"><canvas id="wsChart"></canvas></div>
+      <div class="panel-title">Milestone outlook — issue-linked milestones flagged</div>
+      <div class="chart-wrap"><div id="wsChart" class="mini-milestone"></div></div>
     </div>
     <div class="panel">
       <div class="panel-title">Risks &amp; Issues by Type — click to filter</div>
@@ -331,7 +336,7 @@ ${chartScript}
       <div class="tbl-wrap">
         <table>
           <thead><tr>
-            <th>ID</th><th>Task Name</th><th>Status</th><th>Start</th><th>Finish</th>
+            <th>ID</th><th>Task Name</th><th>Milestone</th><th>Status</th><th>Start</th><th>Finish</th>
             <th>Baseline</th><th>Slip</th><th>↑Pred</th><th>↓Suc</th><th>Linked Issues / Risks</th>
           </tr></thead>
           <tbody id="taskBody"></tbody>
@@ -340,7 +345,10 @@ ${chartScript}
     </div>
     <div class="dep-panel" id="depPanel">
       <div class="dep-header">
-        <h4 id="depTitle">Dependency Chain</h4>
+        <div class="dep-head-main">
+          <h4 id="depTitle">Dependency Chain</h4>
+          <span id="depMeta"></span>
+        </div>
         <span class="dep-close" onclick="closeDepPanel()">✕</span>
       </div>
       <div class="dep-body" id="depBody"></div>
@@ -366,6 +374,13 @@ ${chartScript}
           <option value="12m">Next 12 months</option>
         </select>
       </label>
+      <label>Scale:
+        <select id="ganttScale" onchange="ganttRendered=false;renderGantt()">
+          <option value="days">Days</option>
+          <option value="weeks">Weeks</option>
+          <option value="months" selected>Months</option>
+        </select>
+      </label>
       <label>Risk type:
         <select id="ganttRiskType" onchange="ganttRendered=false;renderGantt()">
           <option value="">All tasks</option>
@@ -377,6 +392,7 @@ ${chartScript}
       <label><input type="checkbox" id="ganttIssues" checked onchange="ganttRendered=false;renderGantt()"> Has issues</label>
       <label><input type="checkbox" id="ganttSlipped" checked onchange="ganttRendered=false;renderGantt()"> Slipped</label>
       <span class="gantt-count" id="ganttCount"></span>
+      <span class="gantt-scale-note" id="ganttScaleNote"></span>
       <div class="gantt-legend">
         <span><svg width="12" height="10"><polygon points="6,0 12,5 6,10 0,5" fill="#16a34a"/></svg> Milestone</span>
         <span><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="#ea580c"/></svg> Slipped task</span>
@@ -405,8 +421,50 @@ let selectedTaskId = null;
 let ganttRendered = false;
 const taskById = new Map(DATA.tasks.map(t => [t.id, t]));
 const fmt = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"}) : "—";
+const fmtShort = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—";
 const esc = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const trunc = (s,n) => s && s.length>n ? s.slice(0,n)+"…" : (s||"");
+const riskKey = r => (r.type || "Risk") + " — " + (r.category || "(Uncategorized)");
+const topRiskKey = task => task.linkedRisks.length ? riskKey(task.linkedRisks[0]) : "No linked risk";
+
+function renderMilestoneMini() {
+  const host = document.getElementById("wsChart");
+  if (!host) return;
+  const milestones = DATA.tasks
+    .filter(t => t.milestone && t.pct < 100 && (t.finish || t.start))
+    .sort((a, b) => (a.finish || a.start || "").localeCompare(b.finish || b.start || ""))
+    .slice(0, 10);
+
+  if (!milestones.length) {
+    host.innerHTML = '<div style="padding:12px;color:var(--text2);font-size:12px">No open milestones found.</div>';
+    return;
+  }
+
+  const dates = milestones.map(m => new Date(m.finish || m.start).getTime()).filter(n => !isNaN(n));
+  const min = Math.min.apply(null, dates);
+  const max = Math.max.apply(null, dates);
+  const range = Math.max(1, max - min);
+  const rowH = 14;
+  const svgH = 24 + milestones.length * rowH;
+  const toX = date => 92 + Math.round(((new Date(date).getTime() - min) / range) * 170);
+
+  const svg = [];
+  svg.push('<svg viewBox="0 0 270 ' + svgH + '" preserveAspectRatio="none">');
+  svg.push('<rect width="270" height="' + svgH + '" fill="#1a1d27"/>');
+  svg.push('<text x="92" y="12" fill="#94a3b8" font-size="8" font-family="sans-serif">' + fmtShort(new Date(min).toISOString()) + '</text>');
+  svg.push('<text x="215" y="12" fill="#94a3b8" font-size="8" font-family="sans-serif">' + fmtShort(new Date(max).toISOString()) + '</text>');
+  svg.push('<line x1="92" y1="16" x2="250" y2="16" stroke="#334155" stroke-width="1"/>');
+  milestones.forEach((m, i) => {
+    const y = 26 + i * rowH;
+    const x = toX(m.finish || m.start);
+    const issue = m.linkedRisks.length > 0;
+    svg.push('<text x="4" y="' + y + '" fill="#e5e7eb" font-size="8" font-family="sans-serif">' + esc(trunc(m.name, 18)) + '</text>');
+    svg.push('<polygon points="' + x + ',' + (y - 7) + ' ' + (x + 6) + ',' + (y - 1) + ' ' + x + ',' + (y + 5) + ' ' + (x - 6) + ',' + (y - 1) + '" fill="' + (issue ? '#ef4444' : '#22c55e') + '" stroke="' + (issue ? '#7f1d1d' : '#14532d') + '" stroke-width="1"/>');
+    if (issue) svg.push('<circle cx="' + (x + 10) + '" cy="' + (y - 4) + '" r="3" fill="#f59e0b"/>');
+  });
+  svg.push('</svg>');
+  host.innerHTML = svg.join("");
+}
 
 // ── Tab switching ──────────────────────────────────────────────────────────
 function switchTab(tab) {
@@ -444,8 +502,7 @@ function init() {
   });
   const statusColors = DATA.statusBreakdown.map((_,i) => \`hsl(\${(i*47+200)%360},60%,55%)\`);
   new Chart(document.getElementById("statusChart"),{type:"doughnut",data:{labels:DATA.statusBreakdown.map(x=>x.s),datasets:[{data:DATA.statusBreakdown.map(x=>x.c),backgroundColor:statusColors,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom",labels:{color:"#9096b8",font:{size:10},boxWidth:10,padding:6}}}}});
-  const ws = DATA.topWorkstreams.slice(0,8);
-  new Chart(document.getElementById("wsChart"),{type:"bar",data:{labels:ws.map(x=>trunc(x.ws,20)),datasets:[{data:ws.map(x=>x.cnt),backgroundColor:"#5c6bc0",borderRadius:3}]},options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:"#9096b8",font:{size:10}},grid:{color:"#2e3350"}},y:{ticks:{color:"#e8eaf6",font:{size:10}},grid:{display:false}}}}});
+  renderMilestoneMini();
   const typeList = document.getElementById("typeList");
   DATA.riskTypeBreakdown.forEach(rt => {
     const tile = document.createElement("div");
@@ -483,13 +540,14 @@ function renderTasks() {
     document.getElementById("filterInfo").textContent = \`\${tasks.length} at-risk tasks\`;
   }
   const tbody = document.getElementById("taskBody");
-  if (!tasks.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty">No matching tasks.</td></tr>'; return; }
+  if (!tasks.length) { tbody.innerHTML = '<tr><td colspan="11" class="empty">No matching tasks.</td></tr>'; return; }
   tbody.innerHTML = tasks.slice(0,400).map(t => {
     const pills = t.linkedRisks.map(r => \`<span class="pill \${/issue/i.test(r.type)?"issue":"risk"}" title="\${esc(r.severity)}">\${esc(trunc(r.name,26))}</span>\`).join("");
     const slipCell = t.slipDays != null ? \`<span class="pill slip">+\${t.slipDays}d</span>\` : t.pct >= 100 ? \`<span class="pill done">Done</span>\` : "—";
     return \`<tr class="\${selectedTaskId===t.id?" selected":""}" onclick="selectTask(event,'\${t.id}')">
       <td style="color:var(--text2);white-space:nowrap">\${t.uid||"—"}</td>
       <td><div class="t-name">\${esc(trunc(t.name,55))}</div><div class="t-ws">\${esc(t.workstream)}</div></td>
+      <td style="white-space:nowrap">\${t.milestone ? '<span class="pill done">🏁 Yes</span>' : '—'}</td>
       <td style="white-space:nowrap">\${esc(t.status)}</td>
       <td style="white-space:nowrap">\${fmt(t.start)}</td>
       <td style="white-space:nowrap">\${fmt(t.finish)}</td>
@@ -502,6 +560,10 @@ function renderTasks() {
   }).join("");
 }
 function selectTask(evt, taskId) {
+  if (selectedTaskId === taskId && document.getElementById("depPanel").classList.contains("open")) {
+    closeDepPanel();
+    return;
+  }
   selectedTaskId = taskId;
   document.querySelectorAll("#taskBody tr").forEach(r => r.classList.remove("selected"));
   evt.currentTarget.classList.add("selected");
@@ -510,11 +572,13 @@ function selectTask(evt, taskId) {
 function openDepPanel(taskId) {
   const task = taskById.get(taskId); if (!task) return;
   document.getElementById("depTitle").textContent = trunc(task.name, 38);
+  document.getElementById("depMeta").innerHTML = task.milestone ? '<span class="dep-head-badge">🏁 Milestone</span>' : '';
   document.getElementById("depPanel").classList.add("open");
   renderDepPanel(task);
 }
 function closeDepPanel() {
   document.getElementById("depPanel").classList.remove("open");
+  document.getElementById("depMeta").innerHTML = "";
   selectedTaskId = null;
   document.querySelectorAll("#taskBody tr").forEach(r => r.classList.remove("selected"));
 }
@@ -568,6 +632,7 @@ function renderDepPanel(task) {
 function renderGantt() {
   const wsFilter = document.getElementById("ganttWs").value;
   const timeWindow = document.getElementById("ganttWindow").value;
+  const scale = document.getElementById("ganttScale").value;
   const riskFilter = document.getElementById("ganttRiskType").value;
   const showMiles = document.getElementById("ganttMilestones").checked;
   const showIssue = document.getElementById("ganttIssues").checked;
@@ -595,6 +660,7 @@ function renderGantt() {
 
   const countLabel = tasks.length + " tasks" + (milestones.length ? (" + " + milestones.length + " milestones") : "");
   document.getElementById("ganttCount").textContent = countLabel;
+  document.getElementById("ganttScaleNote").textContent = "Grouped by workstream → risk type • scale: " + scale;
 
   if (!tasks.length && !milestones.length) {
     document.getElementById("ganttNames").innerHTML = '<div style="padding:20px;color:var(--text2);font-size:12px">No tasks match filters.</div>';
@@ -621,13 +687,28 @@ function renderGantt() {
   }
 
   const totalDays = Math.max(1, (maxDate - minDate) / 86400000);
-  const ppd = Math.max(1.1, Math.min(5.5, 1250 / totalDays));
+  const ppd = scale === "days"
+    ? Math.max(3.5, Math.min(12, 1700 / totalDays))
+    : scale === "weeks"
+      ? Math.max(1.8, Math.min(7, 1450 / totalDays))
+      : Math.max(1.1, Math.min(5.5, 1250 / totalDays));
   const ROW_H = 30;
   const HDR_H = 38;
   const hasMilestoneLane = milestones.length > 0;
   const extraRows = hasMilestoneLane ? 1 : 0;
+  const groupedTasks = [];
+  const workstreams = [...new Set(tasks.map(t => t.workstream))].sort();
+  workstreams.forEach(ws => {
+    groupedTasks.push({ kind: "lane", label: ws, workstream: ws });
+    const inWs = tasks.filter(t => t.workstream === ws);
+    const riskGroups = [...new Set(inWs.map(topRiskKey))].sort();
+    riskGroups.forEach(group => {
+      groupedTasks.push({ kind: "riskHeader", label: group, workstream: ws });
+      inWs.filter(t => topRiskKey(t) === group).forEach(t => groupedTasks.push({ kind: "task", task: t }));
+    });
+  });
   const svgW = Math.ceil(totalDays * ppd) + 80;
-  const svgH = HDR_H + (tasks.length + extraRows) * ROW_H;
+  const svgH = HDR_H + (groupedTasks.length + extraRows) * ROW_H;
 
   const toX = d => {
     if (!d) return null;
@@ -658,14 +739,23 @@ function renderGantt() {
 
   const todayX = toX(new Date().toISOString().slice(0, 10));
 
-  const months = [];
+  const ticks = [];
   const cur = new Date(minDate);
-  while (cur < maxDate) {
-    months.push({
-      x: toX(cur.toISOString().slice(0, 10)),
-      lbl: cur.toLocaleDateString("en-US", { month: "short", year: "2-digit" })
-    });
-    cur.setMonth(cur.getMonth() + 1);
+  if (scale === "days") {
+    while (cur < maxDate) {
+      ticks.push({ x: toX(cur.toISOString().slice(0, 10)), lbl: cur.toLocaleDateString("en-US", { month: "short", day: "numeric" }) });
+      cur.setDate(cur.getDate() + 7);
+    }
+  } else if (scale === "weeks") {
+    while (cur < maxDate) {
+      ticks.push({ x: toX(cur.toISOString().slice(0, 10)), lbl: "Wk of " + cur.toLocaleDateString("en-US", { month: "short", day: "numeric" }) });
+      cur.setDate(cur.getDate() + 7);
+    }
+  } else {
+    while (cur < maxDate) {
+      ticks.push({ x: toX(cur.toISOString().slice(0, 10)), lbl: cur.toLocaleDateString("en-US", { month: "short", year: "2-digit" }) });
+      cur.setMonth(cur.getMonth() + 1);
+    }
   }
 
   const svg = [];
@@ -673,7 +763,7 @@ function renderGantt() {
   svg.push('<rect width="' + svgW + '" height="' + svgH + '" fill="#ffffff"/>');
   svg.push('<rect width="' + svgW + '" height="' + HDR_H + '" fill="#f8fafc"/>');
 
-  months.forEach(m => {
+  ticks.forEach(m => {
     svg.push('<line x1="' + m.x + '" y1="0" x2="' + m.x + '" y2="' + svgH + '" stroke="#e2e8f0" stroke-width="1"/>');
     svg.push('<text x="' + (m.x + 4) + '" y="15" fill="#475569" font-size="10" font-family="sans-serif">' + m.lbl + '</text>');
   });
@@ -716,9 +806,22 @@ function renderGantt() {
     });
   }
 
-  tasks.forEach((t, i) => {
+  groupedTasks.forEach((entry, i) => {
     const rowIndex = i + extraRows;
     const y = HDR_H + rowIndex * ROW_H;
+    if (entry.kind === "lane") {
+      svg.push('<rect x="0" y="' + y + '" width="' + svgW + '" height="' + ROW_H + '" fill="#dbeafe"/>');
+      svg.push('<line x1="0" y1="' + (y + ROW_H) + '" x2="' + svgW + '" y2="' + (y + ROW_H) + '" stroke="#93c5fd"/>');
+      nameRows.push('<div style="height:' + ROW_H + 'px;line-height:' + ROW_H + 'px;padding:0 8px;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#dbeafe;color:#1d4ed8;border-bottom:1px solid #93c5fd" title="' + esc(entry.workstream) + '">🧭 ' + esc(entry.label) + '</div>');
+      return;
+    }
+    if (entry.kind === "riskHeader") {
+      svg.push('<rect x="0" y="' + y + '" width="' + svgW + '" height="' + ROW_H + '" fill="#f8fafc"/>');
+      svg.push('<line x1="0" y1="' + (y + ROW_H) + '" x2="' + svgW + '" y2="' + (y + ROW_H) + '" stroke="#cbd5e1"/>');
+      nameRows.push('<div style="height:' + ROW_H + 'px;line-height:' + ROW_H + 'px;padding:0 16px;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#f8fafc;color:#475569;border-bottom:1px solid #cbd5e1" title="' + esc(entry.label) + '">⚑ ' + esc(entry.label) + '</div>');
+      return;
+    }
+    const t = entry.task;
     const rowBg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
 
     svg.push('<rect x="0" y="' + y + '" width="' + svgW + '" height="' + ROW_H + '" fill="' + rowBg + '"/>');
@@ -753,14 +856,23 @@ function renderGantt() {
         svg.push('<line x1="' + xBL + '" y1="' + (y + 5) + '" x2="' + xBL + '" y2="' + (y + ROW_H - 5) + '" stroke="#f59e0b" stroke-width="2" opacity="0.85"><title>Baseline: ' + fmt(t.baselineFinish) + '</title></line>');
       }
 
-      svg.push('<text x="' + (x1 + 2) + '" y="' + (y + 7) + '" fill="#334155" font-size="9" font-family="sans-serif">' + fmt(t.start) + '</text>');
-      svg.push('<text x="' + (x2 + 4) + '" y="' + (y + 20) + '" fill="#334155" font-size="9" font-family="sans-serif">' + fmt(t.finish) + '</text>');
+      if (bw > 70) {
+        svg.push('<text x="' + (x1 + 6) + '" y="' + (y + 20) + '" fill="#ffffff" font-size="9" font-family="sans-serif">' + fmtShort(t.start) + '</text>');
+        svg.push('<text x="' + (x1 + bw - 34) + '" y="' + (y + 20) + '" fill="#ffffff" font-size="9" font-family="sans-serif">' + fmtShort(t.finish) + '</text>');
+      } else if (bw > 34) {
+        svg.push('<text x="' + (x1 + 4) + '" y="' + (y + 20) + '" fill="#ffffff" font-size="8" font-family="sans-serif">' + fmtShort(t.finish) + '</text>');
+      }
 
       const icon = riskIcon(t);
-      if (icon) svg.push('<text x="' + (x2 + 4) + '" y="' + (y + 9) + '" fill="#dc2626" font-size="10" font-family="sans-serif" font-weight="700">' + icon + '</text>');
+      if (icon && bw > 40) {
+        const badgeW = 24;
+        const badgeX = x1 + bw - badgeW - 4;
+        svg.push('<rect x="' + badgeX + '" y="' + (y + 10) + '" width="' + badgeW + '" height="12" rx="6" fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.35)" stroke-width="0.7"/>');
+        svg.push('<text x="' + (badgeX + 4) + '" y="' + (y + 19) + '" fill="#ffffff" font-size="9" font-family="sans-serif" font-weight="700">' + icon + '</text>');
+      }
 
-      if (shownPred || shownSuc) {
-        svg.push('<text x="' + (x2 + 4) + '" y="' + (y + ROW_H - 4) + '" fill="#475569" font-size="10" font-family="sans-serif">↑' + shownPred + ' ↓' + shownSuc + '</text>');
+      if ((shownPred || shownSuc) && bw > 64) {
+        svg.push('<text x="' + (x1 + Math.min(80, bw / 2)) + '" y="' + (y + 20) + '" fill="#dbeafe" font-size="8" font-family="sans-serif">↑' + shownPred + ' ↓' + shownSuc + '</text>');
       }
     }
 
