@@ -642,6 +642,7 @@ ${plotlyScript}
   .board-section-count.suc{background:#dbeafe;color:#1e40af;}
   /* tree */
   .board-tree{overflow:auto;flex:1;min-height:0;padding:4px 2px;overscroll-behavior:contain;scrollbar-gutter:stable both-edges;}
+  .board-tree-inner{min-width:920px;padding-right:4px;}
   .board-node{position:relative;padding:7px 10px 7px 10px;border-radius:8px;margin:3px 0;border:1.5px solid transparent;transition:border-color .12s;}
   .board-node.branch::before{content:"";position:absolute;left:-1px;top:-4px;bottom:-4px;border-left:2px solid #e2e8f0;}
   .board-node.branch::after{content:"";position:absolute;left:-1px;top:50%;width:8px;border-top:2px solid #e2e8f0;}
@@ -649,18 +650,27 @@ ${plotlyScript}
   .board-node.pred:hover{border-color:#4ade80;}
   .board-node.suc{background:#eff6ff;border-color:#bfdbfe;}
   .board-node.suc:hover{border-color:#60a5fa;}
+  .board-node.active{box-shadow:0 0 0 2px #c7d2fe;}
   .board-node.driving{outline:2px solid #f59e0b;outline-offset:1px;}
   .board-node-row{display:flex;align-items:flex-start;gap:8px;}
   .board-node-toggle{flex-shrink:0;border:1.5px solid var(--border);background:var(--surface);border-radius:5px;cursor:pointer;width:20px;height:20px;line-height:1;font-size:12px;display:flex;align-items:center;justify-content:center;margin-top:1px;}
-  .board-node-body{flex:1;min-width:0;}
-  .board-node-name{font-size:12px;font-weight:600;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .board-node-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+  .board-node-body{flex:1;min-width:0;cursor:pointer;}
+  .board-node-name{font-size:12px;font-weight:600;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;}
+  .board-dir{font-size:11px;color:#64748b;display:inline-flex;align-items:center;justify-content:center;border:1px solid #cbd5e1;border-radius:999px;padding:0 5px;background:#fff;}
+  .board-node-meta{display:grid;grid-template-columns:110px 110px 160px 70px 90px 1fr;gap:6px;margin-top:5px;align-items:center;white-space:nowrap;}
+  .board-col{font-size:10px;border:1px solid #e2e8f0;border-radius:6px;padding:2px 6px;background:#f8fafc;color:#475569;overflow:hidden;text-overflow:ellipsis;}
+  .board-col.flags{display:flex;align-items:center;gap:4px;overflow:auto;padding:2px 4px;background:#fff;}
   .board-chip{display:inline-block;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:600;border:1px solid;}
   .board-chip.date{background:#fff7ed;border-color:#fed7aa;color:#c2410c;}
   .board-chip.pct{background:#f0fdf4;border-color:#86efac;color:#15803d;}
   .board-chip.milestone{background:#faf5ff;border-color:#e9d5ff;color:#7c3aed;}
   .board-chip.driving{background:#fffbeb;border-color:#fcd34d;color:#92400e;}
   .board-chip.dep{background:#f8fafc;border-color:#cbd5e1;color:#475569;}
+  .board-chip.status{font-size:9.5px;}
+  .board-chip.status.danger{background:#fff1f2;border-color:#fecdd3;color:#be123c;}
+  .board-chip.status.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
+  .board-chip.status.info{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8;}
+  .board-chip.status.ok{background:#ecfdf5;border-color:#86efac;color:#166534;}
   /* toolbar */
   .board-toolbar{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;}
   .board-btn{padding:3px 9px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-size:10.5px;font-weight:600;cursor:pointer;color:var(--text2);transition:all .12s;white-space:nowrap;}
@@ -670,6 +680,11 @@ ${plotlyScript}
   .board-divider{width:1px;height:16px;background:var(--border);margin:0 1px;}
   /* gantt panel */
   .board-gantt-panel{display:flex;flex-direction:column;min-height:0;}
+  .board-dep-detail{margin-top:8px;border:1px solid var(--border);border-radius:10px;background:#f8fafc;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:86px;}
+  .board-dep-col{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:7px 8px;min-height:68px;}
+  .board-dep-hd{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-bottom:4px;}
+  .board-dep-txt{font-size:11px;line-height:1.4;color:#0f172a;}
+  .board-dep-meta{font-size:10px;color:#64748b;margin-top:4px;}
 
   /* actions board */
   .actions-layout{height:100%;display:flex;flex-direction:column;gap:8px;min-height:0;}
@@ -683,6 +698,11 @@ ${plotlyScript}
   .actions-col-planned .actions-col-hd{background:#eff6ff;color:#1d4ed8;}
   .actions-col-monitor .actions-col-hd{background:#ecfdf5;color:#166534;}
   .action-card{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:9px 10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 3px rgba(15,23,42,.04);}
+  .action-top{display:flex;flex-wrap:wrap;gap:5px;}
+  .action-pill{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;border:1px solid;max-width:100%;}
+  .action-pill.ws{background:#eef2ff;border-color:#bfdbfe;color:#1e40af;}
+  .action-pill.type{background:#fdf2f8;border-color:#fbcfe8;color:#9d174d;}
+  .action-pill.ms{background:#fff7ed;border-color:#fed7aa;color:#9a3412;}
   .action-title{font-size:12px;font-weight:700;color:var(--text);line-height:1.35;}
   .action-linked{font-size:11px;color:var(--text2);}
   .action-desc{font-size:11px;color:#334155;line-height:1.45;}
@@ -779,7 +799,7 @@ ${plotlyScript}
   <div class="panel" style="height:100%;overflow:hidden;">
     <div class="actions-layout">
       <div class="actions-toolbar">
-        <div class="panel-title" style="margin-bottom:0;">Copilot Resolution Board — prioritized issue cards with linked task context</div>
+        <div class="panel-title" style="margin-bottom:0;">Resolution Board — prioritized issue cards with linked task context</div>
         <div class="actions-sub" id="actionsSub"></div>
       </div>
       <div id="actionsBoard" class="actions-board"></div>
@@ -810,9 +830,17 @@ ${plotlyScript}
               <button id="boardCollapseAll" class="board-btn">− All</button>
             </div>
           </div>
+          <div style="font-size:10px;color:var(--text2);margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
+            <span class="board-chip status danger" title="Task finish date is in the past and not complete">⛔ Past due</span>
+            <span class="board-chip status warn" title="Task is currently slipping against baseline">🔻 Slipping</span>
+            <span class="board-chip status info" title="Task start date is overdue">⏰ Overdue start</span>
+            <span class="board-chip status ok" title="Task finishes within the next 14 days">⏳ Due ≤14d</span>
+            <span style="margin-left:auto">↔ Scroll left/right for full columns</span>
+          </div>
         </div>
         <div id="boardRootCard"></div>
         <div id="boardTree" class="board-tree"></div>
+        <div id="boardDepDetail" class="board-dep-detail"></div>
       </div>
     </div>
     <!-- RIGHT COLUMN: Gantt -->
@@ -824,7 +852,7 @@ ${plotlyScript}
           <span><svg width="10" height="10"><rect width="10" height="10" rx="2" fill="#16a34a"/></svg> Predecessor</span>
           <span><svg width="10" height="10"><rect width="10" height="10" rx="2" fill="#2563eb"/></svg> Successor</span>
           <span><svg width="10" height="10"><polygon points="5,0 10,5 5,10 0,5" fill="#7c3aed"/></svg> Milestone</span>
-          <span style="color:#d97706;">— — Dependency</span>
+          <span style="color:#d97706;">▽ Outline dependency</span>
         </span>
       </div>
       <div id="boardGantt" style="flex:1;min-height:0;"></div>
@@ -927,7 +955,7 @@ const taskById = new Map(DATA.tasks.map(t => [t.id, t]));
 const taskByUid = new Map(DATA.tasks.filter(t => t.uid != null).map(t => [t.uid, t]));
 let planState = null;
 let planGanttTimer = null;
-const boardState = { selectedActionId: null, expanded: new Set(), tree: null, nodeMap: new Map(), rootTask: null, criticalOnly: false, drivingOnly: false };
+const boardState = { selectedActionId: null, selectedNodeId: null, expanded: new Set(), tree: null, nodeMap: new Map(), rootTask: null, criticalOnly: false, drivingOnly: false };
 const fmt = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"}) : "—";
 const fmtShort = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—";
 const esc = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -1258,6 +1286,80 @@ function switchTab(tab) {
   }
 }
 
+function findActionForTask(taskId) {
+  if (!taskId) return null;
+  return (DATA.actionItems || []).find(a => a.taskId === taskId) || null;
+}
+
+function taskSignalList(task, driving) {
+  if (!task) return [];
+  const now = Date.now();
+  const finishMs = task.finish ? new Date(task.finish).getTime() : null;
+  const out = [];
+  if (finishMs && task.pct < 100 && finishMs < now) {
+    out.push({ cls: 'danger', icon: '⛔', label: 'Past due', tip: 'Finish date is in the past and task is not complete.' });
+  }
+  if (task.isSlipped) {
+    out.push({ cls: 'warn', icon: '🔻', label: 'Slipping', tip: 'Task is behind baseline schedule.' });
+  }
+  if (task.isOverdueStart) {
+    out.push({ cls: 'info', icon: '⏰', label: 'Overdue start', tip: 'Planned start date is in the past and work has not started as expected.' });
+  }
+  if (task.isDue14) {
+    out.push({ cls: 'ok', icon: '⏳', label: 'Due ≤14d', tip: 'Task is due within the next 14 days.' });
+  }
+  if (driving) {
+    out.push({ cls: 'warn', icon: '⚡', label: 'Driving', tip: 'This predecessor directly drives the successor with near-zero float.' });
+  }
+  if (task.milestone) {
+    out.push({ cls: 'info', icon: '🏁', label: 'Milestone', tip: 'Milestone-type schedule node.' });
+  }
+  return out;
+}
+
+function renderBoardDepDetail(task) {
+  const host = document.getElementById('boardDepDetail');
+  if (!host) return;
+  if (!task) {
+    host.innerHTML =
+      '<div class="board-dep-col"><div class="board-dep-hd">Issue</div><div class="board-dep-txt">Click any dependency node to see its linked issue context.</div></div>' +
+      '<div class="board-dep-col"><div class="board-dep-hd">Resolution</div><div class="board-dep-txt">Suggested resolution steps will appear here next to the issue.</div></div>';
+    return;
+  }
+  const action = findActionForTask(task.id) || (boardState.selectedActionId ? (DATA.actionItems || []).find(a => a.id === boardState.selectedActionId) : null);
+  const issue = action?.plainIssue || (task.linkedRisks?.[0]?.name || 'No linked issue text available for this dependency.');
+  const impact = action?.plainImpact || action?.linkageImpact || 'No impact description provided.';
+  const resolutionSteps = (action?.actions || []).slice(0, 4);
+  const resolutionHtml = resolutionSteps.length
+    ? '<ul class="action-steps" style="padding-left:15px">' + resolutionSteps.map(s => '<li>' + esc(s) + '</li>').join('') + '</ul>'
+    : '<div class="board-dep-txt">No explicit resolution steps found; review predecessor/successor constraints and owner plan.</div>';
+
+  host.innerHTML =
+    '<div class="board-dep-col">' +
+      '<div class="board-dep-hd">Issue</div>' +
+      '<div class="board-dep-txt">' + esc(trunc(issue, 240)) + '</div>' +
+      '<div class="board-dep-meta">Impact: ' + esc(trunc(impact, 220)) + '</div>' +
+    '</div>' +
+    '<div class="board-dep-col">' +
+      '<div class="board-dep-hd">Resolution</div>' +
+      resolutionHtml +
+      '<div class="board-dep-meta">Owner: ' + esc(action?.owner || task.assignedTo || 'Unassigned') + ' · Milestone: ' + esc(fmt(action?.milestoneDate || task.finish)) + '</div>' +
+    '</div>';
+}
+
+function selectBoardNode(nodeId) {
+  boardState.selectedNodeId = nodeId;
+  const node = boardState.nodeMap.get(nodeId);
+  renderBoardDepDetail(node?.task || null);
+  renderBoardTree();
+}
+
+function selectBoardRoot() {
+  boardState.selectedNodeId = '__root__';
+  renderBoardDepDetail(boardState.rootTask || null);
+  renderBoardTree();
+}
+
 function buildBoardSubtree(task, relation, depth, maxDepth, trail, nodeMap, idRef, parentTaskId) {
   const node = { id: ++idRef.value, task, relation, depth, parentTaskId: parentTaskId || null, children: [] };
   nodeMap.set(node.id, node);
@@ -1341,6 +1443,7 @@ function isDrivingPred(predTask, childTask) {
 function boardNodeRow(node) {
   const canExpand = node.children.length > 0;
   const isOpen = boardState.expanded.has(node.id);
+  const isSelected = boardState.selectedNodeId === node.id;
   const cls = node.relation === 'pred' ? 'pred' : 'suc';
   const pad = node.depth * 18;
   const parentTask = node.relation === 'pred' && node.parentTaskId ? taskById.get(node.parentTaskId) : null;
@@ -1348,21 +1451,31 @@ function boardNodeRow(node) {
   const btn = canExpand
     ? '<button class="board-node-toggle" onclick="toggleBoardNode(' + node.id + ')">' + (isOpen ? '−' : '+') + '</button>'
     : '<span style="display:inline-block;width:20px;"></span>';
-  const isMilestone = !!node.task.milestone;
-  const slipped = node.task.isSlipped;
-  const chips = [
-    isMilestone ? '<span class="board-chip milestone">🏁 Milestone</span>' : '',
-    driving ? '<span class="board-chip driving">⚡ Driving</span>' : '',
-    node.task.start || node.task.finish ? '<span class="board-chip date">' + esc(fmt(node.task.start)) + ' → ' + esc(fmt(node.task.finish)) + '</span>' : '',
-    '<span class="board-chip pct">' + esc(String(node.task.pct || 0)) + '%</span>',
-    (node.task.predCount || node.task.sucCount) ? '<span class="board-chip dep">↑' + esc(String(node.task.predCount||0)) + ' ↓' + esc(String(node.task.sucCount||0)) + '</span>' : ''
-  ].filter(Boolean).join('');
+  const signalBadges = taskSignalList(node.task, driving)
+    .map(s => '<span class="board-chip status ' + s.cls + '" title="' + esc(s.tip) + '">' + s.icon + ' ' + esc(s.label) + '</span>')
+    .join('');
+  const rowTitle = [
+    'Task: ' + (node.task.name || '—'),
+    'Owner: ' + (node.task.assignedTo || 'Unassigned'),
+    'Start: ' + fmt(node.task.start),
+    'Finish: ' + fmt(node.task.finish),
+    'Progress: ' + (node.task.pct || 0) + '%',
+    'Pred: ' + (node.task.predCount || 0) + ' · Suc: ' + (node.task.sucCount || 0)
+  ].join('\n');
   const drivingCls = driving ? ' driving' : '';
-  const row = '<div class="board-node branch ' + cls + drivingCls + '" style="margin-left:' + pad + 'px">' +
+  const activeCls = isSelected ? ' active' : '';
+  const row = '<div class="board-node branch ' + cls + drivingCls + activeCls + '" style="margin-left:' + pad + 'px">' +
     '<div class="board-node-row">' + btn +
-    '<div class="board-node-body">' +
-    '<div class="board-node-name">' + (slipped ? '🔴 ' : '') + esc(trunc(node.task.name, 58)) + '</div>' +
-    '<div class="board-node-meta">' + chips + '</div>' +
+    '<div class="board-node-body" onclick="selectBoardNode(' + node.id + ')" title="' + esc(rowTitle) + '">' +
+    '<div class="board-node-name"><span class="board-dir" title="Dependency flow direction">↓</span>' + esc(trunc(node.task.name, 60)) + '</div>' +
+    '<div class="board-node-meta">' +
+      '<span class="board-col" title="Start date">Start: ' + esc(fmt(node.task.start)) + '</span>' +
+      '<span class="board-col" title="Finish date">Finish: ' + esc(fmt(node.task.finish)) + '</span>' +
+      '<span class="board-col" title="Assigned owner">Owner: ' + esc(trunc(node.task.assignedTo || 'Unassigned', 20)) + '</span>' +
+      '<span class="board-col" title="Percent complete">%: ' + esc(String(node.task.pct || 0)) + '</span>' +
+      '<span class="board-col" title="Dependency counts">↑' + esc(String(node.task.predCount || 0)) + ' ↓' + esc(String(node.task.sucCount || 0)) + '</span>' +
+      '<span class="board-col flags">' + signalBadges + '</span>' +
+    '</div>' +
     '</div></div></div>';
   if (!canExpand || !isOpen) return row;
   return row + node.children.map(boardNodeRow).join('');
@@ -1373,14 +1486,16 @@ function renderBoardTree() {
   const rootCard = document.getElementById('boardRootCard');
   if (!boardState.rootTask || !boardState.tree) {
     if (rootCard) rootCard.innerHTML = '';
+    renderBoardDepDetail(null);
     host.innerHTML = '<div style="color:var(--text2);padding:8px">Select an issue to explore its dependency chain.</div>';
     return;
   }
   const root = boardState.rootTask;
+  const rootActive = boardState.selectedNodeId === '__root__' ? ' style="box-shadow:0 0 0 2px #c7d2fe;cursor:pointer"' : ' style="cursor:pointer"';
   // Root hero card
   if (rootCard) {
     const slipped = root.isSlipped ? '<span class="board-root-chip dates">🔴 Slipped ' + esc(String(root.slipDays || '')) + 'd</span>' : '';
-    rootCard.innerHTML = '<div class="board-root-card">' +
+    rootCard.innerHTML = '<div class="board-root-card" onclick="selectBoardRoot()"' + rootActive + '>' +
       '<div class="board-root-name">' + (root.milestone ? '🏁 ' : '') + esc(trunc(root.name, 70)) + '</div>' +
       '<div class="board-root-chips">' +
         (root.assignedTo ? '<span class="board-root-chip owner">👤 ' + esc(trunc(root.assignedTo, 24)) + '</span>' : '') +
@@ -1397,7 +1512,7 @@ function renderBoardTree() {
   const sucHdr = '<div class="board-section-hdr"><span class="board-section-label">Successors</span><span class="board-section-count suc">' + sucRoots.length + '</span></div>';
   const predBody = predRoots.length ? predRoots.map(boardNodeRow).join('') : '<div style="font-size:12px;color:var(--text2);padding:4px 6px">No predecessors</div>';
   const sucBody = sucRoots.length ? sucRoots.map(boardNodeRow).join('') : '<div style="font-size:12px;color:var(--text2);padding:4px 6px">No successors</div>';
-  host.innerHTML = predHdr + predBody + sucHdr + sucBody;
+  host.innerHTML = '<div class="board-tree-inner">' + predHdr + predBody + sucHdr + sucBody + '</div>';
 }
 
 function collectBoardTasks() {
@@ -1465,7 +1580,10 @@ function renderBoardGantt() {
       text: taskRows.map(r => fmtShort(r.task.start || r.task.finish) + ' → ' + fmtShort(r.task.finish || r.task.start)),
       textposition: 'auto',
       textfont: { color: '#fff', size: 10 },
-      hovertemplate: taskRows.map(r => '<b>' + esc(r.task.name) + '</b><br>Relation: ' + r.relation + ' · Level ' + (r.depth || 0) + '<br>Type: Task<br>Start: ' + fmt(r.task.start) + '<br>Finish: ' + fmt(r.task.finish) + '<br>% Complete: ' + (r.task.pct || 0) + '<br>Owner: ' + esc(r.task.assignedTo || 'Unassigned') + '<extra></extra>'),
+      hovertemplate: taskRows.map(r => {
+        const sig = taskSignalList(r.task, false).map(s => s.icon + ' ' + s.label).join(' · ') || 'None';
+        return '<b>' + esc(r.task.name) + '</b><br>Relation: ' + r.relation + ' · Level ' + (r.depth || 0) + '<br>Type: Task<br>Start: ' + fmt(r.task.start) + '<br>Finish: ' + fmt(r.task.finish) + '<br>% Complete: ' + (r.task.pct || 0) + '<br>Owner: ' + esc(r.task.assignedTo || 'Unassigned') + '<br>Signals: ' + esc(sig) + '<extra></extra>';
+      }),
       showlegend: false
     });
   }
@@ -1514,12 +1632,25 @@ function renderBoardGantt() {
     });
     traces.push({
       type: 'scatter',
-      mode: 'lines+markers',
+      mode: 'lines',
       x,
       y,
-      line: { color: '#94a3b8', width: 1, dash: 'dot' },
-      marker: { size: 4, color: '#94a3b8' },
+      line: { color: '#94a3b8', width: 1.4, dash: 'dot' },
       hoverinfo: 'skip',
+      showlegend: false
+    });
+    traces.push({
+      type: 'scatter',
+      mode: 'markers',
+      x: depSegments.map(seg => seg.toX),
+      y: depSegments.map(seg => seg.toY),
+      marker: {
+        size: 9,
+        symbol: 'triangle-down-open',
+        color: '#ffffff',
+        line: { width: 1.4, color: '#94a3b8' }
+      },
+      hovertemplate: depSegments.map(() => 'Dependency flow ↓<extra></extra>'),
       showlegend: false
     });
   }
@@ -1573,6 +1704,7 @@ function selectBoardAction(actionId) {
 
   if (!rootTask) {
     boardState.rootTask = null;
+    boardState.selectedNodeId = null;
     boardState.tree = null;
     boardState.nodeMap = new Map();
     renderBoardTree();
@@ -1581,6 +1713,7 @@ function selectBoardAction(actionId) {
   }
 
   boardState.rootTask = rootTask;
+  boardState.selectedNodeId = '__root__';
   boardState.tree = buildBoardTree(rootTask);
   boardState.nodeMap = boardState.tree.nodeMap;
   boardState.expanded = new Set();
@@ -1589,6 +1722,7 @@ function selectBoardAction(actionId) {
   }
   // summary no longer needed — root card replaces it
   renderBoardTree();
+  renderBoardDepDetail(rootTask);
   renderBoardGantt();
 }
 
@@ -1599,6 +1733,7 @@ function renderBoardTab() {
     list.innerHTML = '<div style="color:var(--text2)">No open issues/risks.</div>';
     document.getElementById('boardTree').innerHTML = '<div style="color:var(--text2)">No data.</div>';
     document.getElementById('boardGantt').innerHTML = '<div style="color:var(--text2);padding:10px">No data.</div>';
+    renderBoardDepDetail(null);
     return;
   }
   list.innerHTML = items.map(a => {
@@ -1669,18 +1804,42 @@ function renderActions() {
     sub.textContent = totalOpen + ' action cards · ' + immediate + ' immediate';
   }
 
+  const issueTypeIcon = (type, category) => {
+    const seed = String(type || '') + ' ' + String(category || '');
+    const t = seed.toLowerCase();
+    if (/risk/.test(t)) return '⚠️';
+    if (/issue/.test(t)) return '🛠️';
+    if (/data/.test(t)) return '🗃️';
+    if (/test|uat|defect/.test(t)) return '🧪';
+    if (/security|access/.test(t)) return '🔐';
+    if (/schedule|milestone/.test(t)) return '📅';
+    return '📌';
+  };
+
   board.innerHTML = lanes.map(l => {
     const list = scored.filter(x => x.lane === l.key);
     const cards = list.length ? list.map(({ a, t, daysToMilestone }) => {
       const steps = (a.actions || []).slice(0, 3).map(step => '<li>' + esc(step) + '</li>').join('');
+      const typeIcon = issueTypeIcon(a.type, a.sourceCategory);
+      const typeLabel = (a.type || 'Issue') + (a.sourceCategory ? (' · ' + a.sourceCategory) : '');
+      const impactMilestone = a.milestoneName
+        ? (a.milestoneName + ' (' + fmt(a.milestoneDate) + ')')
+        : (t?.milestone ? (t.name + ' (' + fmt(t.finish || t.start) + ')') : 'No milestone identified');
+      const topMeta =
+        '<div class="action-top">' +
+          '<span class="action-pill ws" title="Workstream for the task with the issue">🏷️ ' + esc(a.workstream || '(Unassigned)') + '</span>' +
+          '<span class="action-pill type" title="Issue / risk type">' + typeIcon + ' ' + esc(trunc(typeLabel, 44)) + '</span>' +
+          '<span class="action-pill ms" title="Immediate higher-level milestone impacted">🏁 ' + esc(trunc(impactMilestone, 52)) + '</span>' +
+        '</div>';
       const dueChip = (daysToMilestone != null)
         ? '<span class="action-chip date">🏁 ' + esc(fmt(a.milestoneDate)) + (daysToMilestone >= 0 ? ' (D-' + daysToMilestone + ')' : ' (late)') + '</span>'
         : '';
       const ownerChip = '<span class="action-chip owner">👤 ' + esc(a.owner || t?.assignedTo || 'Unassigned') + '</span>';
       const depChip = '<span class="action-chip dep">↑' + esc(String(a.predCount || 0)) + ' ↓' + esc(String(a.sucCount || 0)) + '</span>';
       return '<article class="action-card">' +
+        topMeta +
         '<div class="action-title">' + esc(trunc(a.plainIssue || a.taskName || 'Issue', 110)) + '</div>' +
-        '<div class="action-linked">Linked task: <strong>' + esc(trunc(a.taskName || 'No linked task', 64)) + '</strong></div>' +
+        '<div class="action-linked">Task with issue: <strong>' + esc(trunc(a.taskName || 'No linked task', 64)) + '</strong> → Immediate higher-level milestone impacted: <strong>' + esc(trunc(impactMilestone, 64)) + '</strong></div>' +
         '<div class="action-desc">' + esc(trunc(a.plainImpact || a.linkageImpact || 'No impact description available.', 180)) + '</div>' +
         '<div class="action-chips">' + ownerChip + dueChip + depChip + '</div>' +
         (steps ? '<ul class="action-steps">' + steps + '</ul>' : '') +
