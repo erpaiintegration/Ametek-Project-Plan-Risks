@@ -962,6 +962,16 @@ const esc = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replac
 const trunc = (s,n) => s && s.length>n ? s.slice(0,n)+"…" : (s||"");
 const riskKey = r => (r.type || "Risk") + " — " + (r.category || "(Uncategorized)");
 const topRiskKey = task => task.linkedRisks.length ? riskKey(task.linkedRisks[0]) : "No linked risk";
+const PERF = { initialTaskRows: 180, maxTaskRows: 320 };
+let atRiskTasksCache = null;
+
+function scheduleNonBlocking(fn) {
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(() => fn(), { timeout: 150 });
+  } else {
+    setTimeout(fn, 0);
+  }
+}
 
 function setLoadingText(msg) {
   const el = document.getElementById('loadingSub');
@@ -1942,10 +1952,14 @@ async function init() {
   // Stage 4: task table
   stageProgress(4, TOTAL);
   await yield_();
-  renderTasks();
+  const tbody = document.getElementById("taskBody");
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">Loading at-risk tasks…</td></tr>';
+  }
   stageProgress(TOTAL, TOTAL);
   await yield_();
   hideLoading();
+  scheduleNonBlocking(() => renderTasks(PERF.initialTaskRows));
 }
 
 // ── Tasks tab ─────────────────────────────────────────────────────────────
@@ -1955,27 +1969,33 @@ function toggleFilter(typeKey, tile) {
   document.querySelectorAll(".type-tile").forEach(t => t.classList.remove("active"));
   tile.classList.add("active");
   document.getElementById("filterClear").style.display = "inline";
-  renderTasks();
+  renderTasks(PERF.maxTaskRows);
 }
 function clearFilter() {
   activeFilter = null;
   document.querySelectorAll(".type-tile").forEach(t => t.classList.remove("active"));
   document.getElementById("filterClear").style.display = "none";
-  renderTasks();
+  renderTasks(PERF.maxTaskRows);
 }
-function renderTasks() {
+function renderTasks(maxRows = PERF.maxTaskRows) {
   let tasks = DATA.tasks;
   if (activeFilter) {
     tasks = tasks.filter(t => t.linkedRisks.some(r => r.type+" — "+r.category === activeFilter));
-    document.getElementById("filterInfo").textContent = \`\${tasks.length} tasks linked to "\${activeFilter}"\`;
+    const shown = Math.min(tasks.length, maxRows);
+    document.getElementById("filterInfo").textContent = `\${tasks.length} tasks linked to "\${activeFilter}" · showing \${shown}`;
   } else {
-    tasks = tasks.filter(t => t.isSlipped || t.isOverdueStart || t.isDue14 || t.linkedRisks.length > 0);
-    tasks.sort((a,b) => (b.slipDays||0)-(a.slipDays||0));
-    document.getElementById("filterInfo").textContent = \`\${tasks.length} at-risk tasks\`;
+    if (!atRiskTasksCache) {
+      atRiskTasksCache = DATA.tasks
+        .filter(t => t.isSlipped || t.isOverdueStart || t.isDue14 || t.linkedRisks.length > 0)
+        .sort((a,b) => (b.slipDays||0)-(a.slipDays||0));
+    }
+    tasks = atRiskTasksCache;
+    const shown = Math.min(tasks.length, maxRows);
+    document.getElementById("filterInfo").textContent = `\${tasks.length} at-risk tasks · showing \${shown}`;
   }
   const tbody = document.getElementById("taskBody");
   if (!tasks.length) { tbody.innerHTML = '<tr><td colspan="11" class="empty">No matching tasks.</td></tr>'; return; }
-  tbody.innerHTML = tasks.slice(0,400).map(t => {
+  tbody.innerHTML = tasks.slice(0, maxRows).map(t => {
     const pills = t.linkedRisks.map(r => \`<span class="pill \${/issue/i.test(r.type)?"issue":"risk"}" title="\${esc(r.severity)}">\${esc(trunc(r.name,26))}</span>\`).join("");
     const slipCell = t.slipDays != null ? \`<span class="pill slip">+\${t.slipDays}d</span>\` : t.pct >= 100 ? \`<span class="pill done">Done</span>\` : "—";
     return \`<tr class="\${selectedTaskId===t.id?" selected":""}" onclick="selectTask(event,'\${t.id}')">
