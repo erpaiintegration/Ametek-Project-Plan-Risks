@@ -27,6 +27,56 @@ function selVal(p) {
 }
 function relIds(p) { return p?.type === "relation" ? (p.relation || []).map(r => r.id) : []; }
 function relCount(p) { return relIds(p).length; }
+function textLike(p) {
+  if (!p) return "";
+  if (p.type === "rich_text") return text(p.rich_text || []);
+  if (p.type === "title") return text(p.title || []);
+  if (p.type === "number") return p.number == null ? "" : String(p.number);
+  if (p.type === "select") return p.select?.name || "";
+  if (p.type === "status") return p.status?.name || "";
+  if (p.type === "formula") {
+    const f = p.formula || {};
+    if (typeof f.string === "string") return f.string;
+    if (typeof f.number === "number") return String(f.number);
+  }
+  return "";
+}
+function parseIntOrNull(v) {
+  const n = parseInt(String(v || "").trim(), 10);
+  return Number.isFinite(n) ? n : null;
+}
+function extractOutlineLevel(props) {
+  const direct = [
+    props["Outline Level"],
+    props["Level"],
+    props["WBS Level"],
+    props["Task Level"]
+  ];
+  for (const p of direct) {
+    const n = p?.type === "number" ? p.number : parseIntOrNull(textLike(p));
+    if (n != null) return n;
+  }
+  const outlineNumber = textLike(props["Outline Number"]) || textLike(props["WBS"]);
+  if (outlineNumber) {
+    const levelFromWbs = outlineNumber.split(".").filter(Boolean).length;
+    if (levelFromWbs > 0) return levelFromWbs;
+  }
+  return null;
+}
+function extractParentUid(props) {
+  const candidates = [
+    props["Parent Unique ID"],
+    props["Parent UID"],
+    props["Parent Task ID"],
+    props["Parent Task Unique ID"],
+    props["Summary Task ID"]
+  ];
+  for (const p of candidates) {
+    const n = p?.type === "number" ? p.number : parseIntOrNull(textLike(p));
+    if (n != null) return n;
+  }
+  return null;
+}
 function splitNames(v) {
   return [...new Set(String(v || "").split(/[;|,/]/).map(x => x.trim()).filter(Boolean))];
 }
@@ -162,6 +212,8 @@ async function main() {
     const baselineFinish = dateVal(p["Baseline Finish"]) || dateVal(p["Baseline10 Finish"]);
     const pct = numVal(p["% Complete"]) ?? 0;
     const milestone = checkVal(p.Milestone);
+    const outlineLevel = extractOutlineLevel(p);
+    const parentUid = extractParentUid(p);
     const predCount = relCountByNames(p, ["Predecessor Tasks", "Predecessors"]);
     const sucCount = relCountByNames(p, ["Successor Tasks", "Successors"]);
     const predIds = [...relIds(p["Predecessor Tasks"]), ...relIds(p.Predecessors)];
@@ -201,6 +253,8 @@ async function main() {
       baselineFinish,
       pct,
       milestone,
+      outlineLevel,
+      parentUid,
       predCount,
       sucCount,
       predIds,
@@ -401,6 +455,7 @@ ${plotlyScript}
   <button class="tab-btn active" id="tabTasks" onclick="switchTab('tasks')">📋 Tasks &amp; Issues</button>
   <button class="tab-btn" id="tabGantt" onclick="switchTab('gantt')">📅 Gantt / Milestones</button>
   <button class="tab-btn" id="tabActions" onclick="switchTab('actions')">🧠 Proposed Actions</button>
+  <button class="tab-btn" id="tabPlan" onclick="switchTab('plan')">🗂️ Plan Explorer</button>
 </div>
 
 <!-- TASKS TAB -->
@@ -517,6 +572,38 @@ ${plotlyScript}
     </div>
   </div>
 </div>
+
+<!-- PLAN EXPLORER TAB -->
+<div id="planContent" style="display:none;flex:1;flex-direction:column;overflow:hidden;padding:10px 18px 12px;gap:10px;">
+  <div class="panel" style="padding:8px 10px;flex-shrink:0;">
+    <div class="panel-title">Rolling 4-week calendar (L3/L4 focus through mock data loads level)</div>
+    <div id="planCalendar" style="min-height:90px;font-size:12px;color:var(--text2);">Loading…</div>
+  </div>
+  <div style="display:grid;grid-template-columns:minmax(420px,1.1fr) minmax(420px,1fr);gap:10px;flex:1;min-height:0;">
+    <div class="panel" style="min-height:0;display:flex;flex-direction:column;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <div class="panel-title" style="margin-bottom:0;">Whole Plan Hierarchy</div>
+        <button id="planExpandAll" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;">Expand all</button>
+        <button id="planCollapseAll" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;">Collapse all</button>
+        <span id="planCount" style="margin-left:auto;font-size:11px;color:var(--text2);"></span>
+      </div>
+      <div class="tbl-wrap" style="box-shadow:none;border-radius:10px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Task</th><th>Lvl</th><th>Owner</th><th>Finish</th><th>Indicators</th>
+            </tr>
+          </thead>
+          <tbody id="planBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel" style="min-height:0;display:flex;flex-direction:column;">
+      <div class="panel-title">Adjacent plan gantt (visible hierarchy rows)</div>
+      <div id="planGantt" style="flex:1;min-height:0;"></div>
+    </div>
+  </div>
+</div>
 <div id="ganttTip"></div>
 
 <script>
@@ -524,13 +611,220 @@ const DATA = ${data};
 let activeFilter = null;
 let selectedTaskId = null;
 let ganttRendered = false;
+let planRendered = false;
 const taskById = new Map(DATA.tasks.map(t => [t.id, t]));
+const taskByUid = new Map(DATA.tasks.filter(t => t.uid != null).map(t => [t.uid, t]));
+let planState = null;
 const fmt = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"}) : "—";
 const fmtShort = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—";
 const esc = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const trunc = (s,n) => s && s.length>n ? s.slice(0,n)+"…" : (s||"");
 const riskKey = r => (r.type || "Risk") + " — " + (r.category || "(Uncategorized)");
 const topRiskKey = task => task.linkedRisks.length ? riskKey(task.linkedRisks[0]) : "No linked risk";
+
+function buildPlanState() {
+  const byId = new Map(DATA.tasks.map(t => [t.id, {
+    id: t.id,
+    uid: t.uid,
+    name: t.name,
+    assignedTo: t.assignedTo,
+    start: t.start,
+    finish: t.finish,
+    outlineLevel: t.outlineLevel || null,
+    parentUid: t.parentUid || null,
+    workstream: t.workstream,
+    task: t,
+    children: [],
+    parentId: null
+  }]));
+  const nodes = [...byId.values()];
+
+  nodes.forEach(n => {
+    if (n.parentUid != null && taskByUid.has(n.parentUid)) {
+      const parentTask = taskByUid.get(n.parentUid);
+      const parent = byId.get(parentTask.id);
+      if (parent && parent.id !== n.id) {
+        n.parentId = parent.id;
+        parent.children.push(n.id);
+      }
+    }
+  });
+
+  const roots = nodes.filter(n => !n.parentId).sort((a, b) => {
+    if (a.outlineLevel != null && b.outlineLevel != null && a.outlineLevel !== b.outlineLevel) return a.outlineLevel - b.outlineLevel;
+    return (a.uid || 999999) - (b.uid || 999999) || a.name.localeCompare(b.name);
+  }).map(n => n.id);
+
+  nodes.forEach(n => n.children.sort((aId, bId) => {
+    const a = byId.get(aId), b = byId.get(bId);
+    return (a.uid || 999999) - (b.uid || 999999) || a.name.localeCompare(b.name);
+  }));
+
+  const expanded = new Set();
+  nodes.forEach(n => {
+    if (n.children.length && (n.outlineLevel == null || n.outlineLevel <= 2)) expanded.add(n.id);
+  });
+
+  return { byId, roots, expanded };
+}
+
+function visiblePlanRows() {
+  if (!planState) planState = buildPlanState();
+  const rows = [];
+  const walk = (id, depth) => {
+    const n = planState.byId.get(id);
+    if (!n) return;
+    rows.push({ node: n, depth });
+    if (n.children.length && planState.expanded.has(n.id)) {
+      n.children.forEach(cid => walk(cid, depth + 1));
+    }
+  };
+  planState.roots.forEach(id => walk(id, 0));
+  return rows;
+}
+
+function hasIssueRollup(nodeId) {
+  if (!planState) return false;
+  const n = planState.byId.get(nodeId);
+  if (!n) return false;
+  const selfIssue = (n.task.linkedRisks || []).some(r => /issue/i.test(r.type));
+  if (selfIssue) return true;
+  for (const cid of n.children) {
+    if (hasIssueRollup(cid)) return true;
+  }
+  return false;
+}
+
+function renderPlanCalendar() {
+  const host = document.getElementById('planCalendar');
+  const now = new Date();
+  const to = new Date(now.getTime() + 28 * 86400000);
+  const focus = DATA.tasks
+    .filter(t => (t.outlineLevel === 3 || t.outlineLevel === 4) && t.pct < 100 && (t.start || t.finish))
+    .filter(t => {
+      const d = new Date(t.start || t.finish);
+      return d >= now && d <= to;
+    })
+    .sort((a, b) => (a.finish || a.start || '').localeCompare(b.finish || b.start || ''))
+    .slice(0, 16);
+
+  if (!focus.length) {
+    host.innerHTML = '<div style="padding:8px 2px">No L3/L4 items in the next 4 weeks.</div>';
+    return;
+  }
+
+  host.innerHTML = focus.map(t => {
+    const flag = t.linkedRisks.length ? '⚠' : '•';
+    const date = fmt(t.start || t.finish);
+    return '<div style="padding:4px 0;border-bottom:1px dashed var(--border)">' +
+      '<span style="display:inline-block;min-width:84px;color:var(--text2)">' + esc(date) + '</span>' +
+      '<span style="font-weight:600;color:var(--text)">L' + esc(String(t.outlineLevel || '?')) + '</span> ' + flag + ' ' +
+      esc(trunc(t.name, 70)) +
+      '<span style="color:var(--text2)"> — ' + esc(t.assignedTo || 'Unassigned') + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function renderPlanExplorer() {
+  if (!planState) planState = buildPlanState();
+  const rows = visiblePlanRows();
+  const body = document.getElementById('planBody');
+  document.getElementById('planCount').textContent = rows.length + ' visible rows';
+
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">No plan rows available.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = rows.slice(0, 1200).map(r => {
+    const n = r.node;
+    const canExpand = n.children.length > 0;
+    const isOpen = canExpand && planState.expanded.has(n.id);
+    const issueFlag = hasIssueRollup(n.id);
+    const slipFlag = n.task.isSlipped;
+    const ind = [
+      issueFlag ? '<span class="pill issue">Issue</span>' : '',
+      slipFlag ? '<span class="pill slip">Slip</span>' : '',
+      n.task.milestone ? '<span class="pill done">🏁</span>' : ''
+    ].filter(Boolean).join(' ');
+    return '<tr>' +
+      '<td>' +
+        '<div style="display:flex;align-items:center;gap:6px;padding-left:' + (r.depth * 14) + 'px">' +
+          (canExpand
+            ? '<button onclick="togglePlanNode(\'' + n.id + '\')" style="border:1px solid var(--border);background:var(--surface2);border-radius:4px;width:18px;height:18px;cursor:pointer;font-size:11px;line-height:1">' + (isOpen ? '−' : '+') + '</button>'
+            : '<span style="display:inline-block;width:18px"></span>') +
+          '<span style="font-weight:' + (r.depth <= 1 ? 600 : 500) + '">' + esc(trunc(n.name, 70)) + '</span>' +
+        '</div>' +
+      '</td>' +
+      '<td>' + esc(String(n.outlineLevel || '—')) + '</td>' +
+      '<td>' + esc(trunc(n.assignedTo || 'Unassigned', 22)) + '</td>' +
+      '<td>' + esc(fmt(n.finish)) + '</td>' +
+      '<td>' + (ind || '<span style="color:var(--text2)">—</span>') + '</td>' +
+      '</tr>';
+  }).join('');
+
+  renderPlanGantt(rows);
+}
+
+function togglePlanNode(id) {
+  if (!planState) return;
+  if (planState.expanded.has(id)) planState.expanded.delete(id);
+  else planState.expanded.add(id);
+  renderPlanExplorer();
+}
+
+function renderPlanGantt(rows) {
+  const host = document.getElementById('planGantt');
+  const taskRows = rows.filter(r => r.node.task.pct < 100 && (r.node.start || r.node.finish)).slice(0, 220);
+  if (!taskRows.length) {
+    host.innerHTML = '<div style="padding:10px;color:var(--text2)">No visible dated tasks to chart.</div>';
+    return;
+  }
+
+  const minD = new Date(Math.min(...taskRows.map(r => new Date(r.node.start || r.node.finish).getTime())));
+  const maxD = new Date(Math.max(...taskRows.map(r => new Date(r.node.finish || r.node.start).getTime())));
+  minD.setDate(minD.getDate() - 3);
+  maxD.setDate(maxD.getDate() + 14);
+
+  const y = taskRows.map(r => ' '.repeat(Math.min(10, r.depth * 2)) + trunc(r.node.name, 40));
+  const base = taskRows.map(r => r.node.start || r.node.finish);
+  const dur = taskRows.map(r => Math.max(86400000, new Date(r.node.finish || r.node.start).getTime() - new Date(r.node.start || r.node.finish).getTime() + 86400000));
+
+  Plotly.react(host, [{
+    type: 'bar',
+    orientation: 'h',
+    y,
+    base,
+    x: dur,
+    marker: {
+      color: taskRows.map(r => r.node.task.isSlipped ? '#d97757' : hasIssueRollup(r.node.id) ? '#5b7cff' : '#94a3b8')
+    },
+    text: taskRows.map(r => fmtShort(r.node.start || r.node.finish) + ' → ' + fmtShort(r.node.finish || r.node.start)),
+    textposition: 'inside',
+    insidetextanchor: 'middle',
+    textfont: { color: '#fff', size: 10 },
+    hovertemplate: taskRows.map(r => '<b>' + esc(r.node.name) + '</b><br>Level: ' + esc(String(r.node.outlineLevel || '—')) + '<br>Start: ' + fmt(r.node.start) + '<br>Finish: ' + fmt(r.node.finish) + '<extra></extra>')
+  }], {
+    margin: { l: 240, r: 12, t: 10, b: 36 },
+    paper_bgcolor: '#ffffff',
+    plot_bgcolor: '#ffffff',
+    barmode: 'overlay',
+    height: Math.max(560, taskRows.length * 24),
+    xaxis: {
+      type: 'date',
+      range: [minD.toISOString(), maxD.toISOString()],
+      showgrid: true,
+      gridcolor: '#e7edf4',
+      tickfont: { color: '#5f7185', size: 10 }
+    },
+    yaxis: {
+      automargin: true,
+      autorange: 'reversed',
+      tickfont: { color: '#334155', size: 10 }
+    },
+    showlegend: false
+  }, { displayModeBar: false, responsive: true });
+}
 
 function renderMilestoneMini() {
   const host = document.getElementById("wsChart");
@@ -594,17 +888,26 @@ function renderMilestoneMini() {
 function switchTab(tab) {
   const isGantt = tab === "gantt";
   const isActions = tab === "actions";
-  document.getElementById("tabTasks").classList.toggle("active", !isGantt);
+  const isPlan = tab === "plan";
+  document.getElementById("tabTasks").classList.toggle("active", !isGantt && !isActions && !isPlan);
   document.getElementById("tabGantt").classList.toggle("active", isGantt);
   document.getElementById("tabActions").classList.toggle("active", isActions);
+  document.getElementById("tabPlan").classList.toggle("active", isPlan);
   const tc = document.getElementById("tasksContent");
-  tc.style.display = isGantt || isActions ? "none" : "contents";
+  tc.style.display = isGantt || isActions || isPlan ? "none" : "contents";
   const ac = document.getElementById("actionsContent");
   ac.style.display = isActions ? "flex" : "none";
   const gc = document.getElementById("ganttContent");
   gc.style.display = isGantt ? "flex" : "none";
+  const pc = document.getElementById("planContent");
+  pc.style.display = isPlan ? "flex" : "none";
   if (isGantt && !ganttRendered) { renderGantt(); ganttRendered = true; }
   if (isActions) renderActions();
+  if (isPlan && !planRendered) {
+    renderPlanCalendar();
+    renderPlanExplorer();
+    planRendered = true;
+  }
 }
 
 function renderActions() {
@@ -662,6 +965,20 @@ function init() {
     tile.addEventListener("click", () => toggleFilter(rt.typeKey, tile));
     typeList.appendChild(tile);
   });
+  const exp = document.getElementById('planExpandAll');
+  const col = document.getElementById('planCollapseAll');
+  if (exp && col) {
+    exp.addEventListener('click', () => {
+      if (!planState) planState = buildPlanState();
+      planState.byId.forEach(n => { if (n.children.length) planState.expanded.add(n.id); });
+      renderPlanExplorer();
+    });
+    col.addEventListener('click', () => {
+      if (!planState) planState = buildPlanState();
+      planState.expanded.clear();
+      renderPlanExplorer();
+    });
+  }
   renderTasks();
 }
 
