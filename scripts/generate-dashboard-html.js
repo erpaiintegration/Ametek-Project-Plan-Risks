@@ -1982,7 +1982,7 @@ function renderTasks(maxRows = PERF.maxTaskRows) {
   if (activeFilter) {
     tasks = tasks.filter(t => t.linkedRisks.some(r => r.type+" — "+r.category === activeFilter));
     const shown = Math.min(tasks.length, maxRows);
-    document.getElementById("filterInfo").textContent = `\${tasks.length} tasks linked to "\${activeFilter}" · showing \${shown}`;
+    document.getElementById("filterInfo").textContent = \`\${tasks.length} tasks linked to "\${activeFilter}" · showing \${shown}\`;
   } else {
     if (!atRiskTasksCache) {
       atRiskTasksCache = DATA.tasks
@@ -1991,7 +1991,7 @@ function renderTasks(maxRows = PERF.maxTaskRows) {
     }
     tasks = atRiskTasksCache;
     const shown = Math.min(tasks.length, maxRows);
-    document.getElementById("filterInfo").textContent = `\${tasks.length} at-risk tasks · showing \${shown}`;
+    document.getElementById("filterInfo").textContent = \`\${tasks.length} at-risk tasks · showing \${shown}\`;
   }
   const tbody = document.getElementById("taskBody");
   if (!tasks.length) { tbody.innerHTML = '<tr><td colspan="11" class="empty">No matching tasks.</td></tr>'; return; }
