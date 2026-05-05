@@ -615,7 +615,7 @@ ${plotlyScript}
   .board-layout{display:grid;grid-template-columns:400px 1fr;gap:12px;flex:1;min-height:0;}
   .board-left{display:flex;flex-direction:column;min-height:0;gap:10px;}
   /* issue list */
-  .board-list{overflow:auto;max-height:220px;padding:4px;}
+  .board-list{overflow:auto;max-height:220px;padding:4px;min-height:0;overscroll-behavior:contain;scrollbar-gutter:stable both-edges;}
   .board-item{padding:9px 11px;border:1.5px solid var(--border);border-radius:10px;background:var(--surface);margin-bottom:5px;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
   .board-item:hover{border-color:#93c5fd;box-shadow:0 1px 6px #3b82f615;}
   .board-item.active{border-color:var(--blue);background:#eef2ff;box-shadow:0 0 0 2px #c7d2fe;}
@@ -641,7 +641,7 @@ ${plotlyScript}
   .board-section-count.pred{background:#dcfce7;color:#166534;}
   .board-section-count.suc{background:#dbeafe;color:#1e40af;}
   /* tree */
-  .board-tree{overflow:auto;flex:1;padding:4px 2px;}
+  .board-tree{overflow:auto;flex:1;min-height:0;padding:4px 2px;overscroll-behavior:contain;scrollbar-gutter:stable both-edges;}
   .board-node{position:relative;padding:7px 10px 7px 10px;border-radius:8px;margin:3px 0;border:1.5px solid transparent;transition:border-color .12s;}
   .board-node.branch::before{content:"";position:absolute;left:-1px;top:-4px;bottom:-4px;border-left:2px solid #e2e8f0;}
   .board-node.branch::after{content:"";position:absolute;left:-1px;top:50%;width:8px;border-top:2px solid #e2e8f0;}
@@ -670,6 +670,30 @@ ${plotlyScript}
   .board-divider{width:1px;height:16px;background:var(--border);margin:0 1px;}
   /* gantt panel */
   .board-gantt-panel{display:flex;flex-direction:column;min-height:0;}
+
+  /* actions board */
+  .actions-layout{height:100%;display:flex;flex-direction:column;gap:8px;min-height:0;}
+  .actions-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+  .actions-sub{font-size:11px;color:var(--text2);}
+  .actions-board{flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(280px,1fr));gap:10px;overflow-x:auto;padding-bottom:2px;}
+  .actions-col{border:1px solid var(--border);border-radius:12px;background:var(--surface2);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+  .actions-col-hd{padding:8px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text2);}
+  .actions-col-body{padding:8px;display:flex;flex-direction:column;gap:8px;overflow:auto;min-height:0;overscroll-behavior:contain;scrollbar-gutter:stable both-edges;}
+  .actions-col-immediate .actions-col-hd{background:#fff1f2;color:#be123c;}
+  .actions-col-planned .actions-col-hd{background:#eff6ff;color:#1d4ed8;}
+  .actions-col-monitor .actions-col-hd{background:#ecfdf5;color:#166534;}
+  .action-card{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:9px 10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 3px rgba(15,23,42,.04);}
+  .action-title{font-size:12px;font-weight:700;color:var(--text);line-height:1.35;}
+  .action-linked{font-size:11px;color:var(--text2);}
+  .action-desc{font-size:11px;color:#334155;line-height:1.45;}
+  .action-chips{display:flex;flex-wrap:wrap;gap:5px;}
+  .action-chip{display:inline-flex;align-items:center;padding:1px 7px;border-radius:999px;border:1px solid var(--border);background:#f8fafc;font-size:10px;font-weight:600;color:#475569;}
+  .action-chip.owner{background:#ede9fe;border-color:#c4b5fd;color:#5b21b6;}
+  .action-chip.date{background:#fff7ed;border-color:#fed7aa;color:#c2410c;}
+  .action-chip.dep{background:#eef2ff;border-color:#bfdbfe;color:#1e40af;}
+  .action-steps{margin:0;padding-left:16px;font-size:11px;color:#0f172a;line-height:1.45;}
+  .action-steps li{margin:0 0 2px 0;}
+  .action-impact{font-size:10px;color:var(--text2);padding-top:4px;border-top:1px dashed var(--border);}
   @keyframes spin{to{transform:rotate(360deg)}}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
@@ -753,16 +777,12 @@ ${plotlyScript}
 <!-- ACTIONS TAB -->
 <div id="actionsContent" style="display:none;flex:1;overflow:hidden;padding:10px 18px 12px;">
   <div class="panel" style="height:100%;overflow:hidden;">
-    <div class="panel-title">Copilot Insights — focused schedule conflicts, dates, and corrective actions</div>
-    <div class="tbl-wrap" style="height:100%;box-shadow:none;border-radius:10px;">
-      <table>
-        <thead>
-          <tr>
-            <th>Issue</th><th>Key Dates</th><th>Recommended Actions</th><th>Owner</th>
-          </tr>
-        </thead>
-        <tbody id="actionBody"></tbody>
-      </table>
+    <div class="actions-layout">
+      <div class="actions-toolbar">
+        <div class="panel-title" style="margin-bottom:0;">Copilot Resolution Board — prioritized issue cards with linked task context</div>
+        <div class="actions-sub" id="actionsSub"></div>
+      </div>
+      <div id="actionsBoard" class="actions-board"></div>
     </div>
   </div>
 </div>
@@ -1439,10 +1459,11 @@ function renderBoardGantt() {
       base: taskRows.map(r => r.task.start || r.task.finish),
       x: taskRows.map(r => Math.max(86400000, new Date(r.task.finish || r.task.start).getTime() - new Date(r.task.start || r.task.finish).getTime() + 86400000)),
       marker: {
-        color: taskRows.map(r => r.relation === 'ROOT' ? '#4b6bfb' : r.relation === 'PRED' ? '#16a34a' : '#2563eb')
+        color: taskRows.map(r => r.relation === 'ROOT' ? '#4b6bfb' : r.relation === 'PRED' ? '#16a34a' : '#2563eb'),
+        line: { width: 1, color: '#1e293b22' }
       },
       text: taskRows.map(r => fmtShort(r.task.start || r.task.finish) + ' → ' + fmtShort(r.task.finish || r.task.start)),
-      textposition: 'inside',
+      textposition: 'auto',
       textfont: { color: '#fff', size: 10 },
       hovertemplate: taskRows.map(r => '<b>' + esc(r.task.name) + '</b><br>Relation: ' + r.relation + ' · Level ' + (r.depth || 0) + '<br>Type: Task<br>Start: ' + fmt(r.task.start) + '<br>Finish: ' + fmt(r.task.finish) + '<br>% Complete: ' + (r.task.pct || 0) + '<br>Owner: ' + esc(r.task.assignedTo || 'Unassigned') + '<extra></extra>'),
       showlegend: false
@@ -1506,7 +1527,9 @@ function renderBoardGantt() {
   Plotly.react(host, traces, {
     margin: { l: 260, r: 16, t: 10, b: 36 },
     paper_bgcolor: '#ffffff', plot_bgcolor: '#f8fafc',
-    height: Math.max(480, rows.length * 30),
+    height: Math.max(500, rows.length * 32),
+    bargap: 0.3,
+    uniformtext: { mode: 'hide', minsize: 9 },
     xaxis: { type: 'date', range: [minD.toISOString(), maxD.toISOString()], showgrid: true, gridcolor: '#e2e8f0', gridwidth: 1, tickfont: { color: '#64748b', size: 10 }, zeroline: false },
     yaxis: { automargin: true, autorange: 'reversed', tickfont: { color: '#334155', size: 10.5 } },
     showlegend: false
@@ -1552,7 +1575,6 @@ function selectBoardAction(actionId) {
     boardState.rootTask = null;
     boardState.tree = null;
     boardState.nodeMap = new Map();
-    document.getElementById('boardSummary').textContent = 'No linked task available for this issue/risk.';
     renderBoardTree();
     renderBoardGantt();
     return;
@@ -1611,34 +1633,64 @@ function renderBoardTab() {
 }
 
 function renderActions() {
-  const body = document.getElementById("actionBody");
+  const board = document.getElementById("actionsBoard");
+  const sub = document.getElementById("actionsSub");
   const items = DATA.actionItems || [];
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="4" class="empty">No open risks/issues to summarize.</td></tr>';
+    if (sub) sub.textContent = 'No open issues/risks to summarize';
+    board.innerHTML = '<div class="empty">No open risks/issues to summarize.</div>';
     return;
   }
-  body.innerHTML = items.slice(0, 250).map(a => {
-    const acts = (a.actions || []).map(x => '<div>• ' + esc(x) + '</div>').join('');
-    const dates = [
-      '<div><span style="color:var(--text2)">Task start:</span> ' + esc(fmt(a.taskStart)) + '</div>',
-      '<div><span style="color:var(--text2)">Task finish:</span> ' + esc(fmt(a.taskFinish)) + '</div>',
-      '<div><span style="color:var(--text2)">Milestone:</span> ' + esc(a.milestoneName ? trunc(a.milestoneName, 40) : '—') + '</div>',
-      '<div><span style="color:var(--text2)">Milestone date:</span> ' + esc(fmt(a.milestoneDate)) + '</div>'
-    ].join('');
-    const deps = '<div style="font-size:11px;color:var(--text2);margin-top:6px">Pred: ' + esc(String(a.predCount || 0)) + ' · Suc: ' + esc(String(a.sucCount || 0)) + '</div>';
-    const linkage = '<div style="font-size:11px;margin-top:6px"><span style="color:var(--text2)">Linkage impact:</span> ' + esc(a.linkageImpact || '—') + '</div>';
-    const issueCell =
-      '<div style="font-weight:600">' + esc(a.workstream || '(Unassigned)') + '</div>' +
-      '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + esc(trunc(a.taskName || '(No linked task)', 60)) + '</div>' +
-      '<div style="margin-top:6px">' + esc(a.plainIssue) + '</div>' +
-      deps +
-      linkage;
-    return '<tr>' +
-      '<td>' + issueCell + '<div style="font-size:11px;color:var(--text2);margin-top:6px">Impact: ' + esc(a.plainImpact) + '</div></td>' +
-      '<td>' + dates + '</td>' +
-      '<td>' + acts + '</td>' +
-      '<td>' + esc(a.owner || 'Unassigned') + '</td>' +
-      '</tr>';
+
+  const nowMs = Date.now();
+  const scored = items.slice(0, 300).map(a => {
+    const t = a.taskId ? taskById.get(a.taskId) : null;
+    const milestoneMs = a.milestoneDate ? new Date(a.milestoneDate).getTime() : null;
+    const daysToMilestone = milestoneMs ? Math.round((milestoneMs - nowMs) / 86400000) : null;
+    let urgency = 0;
+    if (t?.isSlipped) urgency += 5;
+    if (t?.isOverdueStart) urgency += 3;
+    if (t?.isDue14) urgency += 2;
+    if ((a.predCount || 0) + (a.sucCount || 0) >= 4) urgency += 1;
+    if (daysToMilestone != null && daysToMilestone <= 14) urgency += 2;
+    const lane = urgency >= 6 ? 'immediate' : urgency >= 3 ? 'planned' : 'monitor';
+    return { a, t, urgency, lane, daysToMilestone };
+  }).sort((x, y) => y.urgency - x.urgency);
+
+  const lanes = [
+    { key: 'immediate', label: 'Immediate Resolution', css: 'actions-col-immediate' },
+    { key: 'planned', label: 'Planned Resolution', css: 'actions-col-planned' },
+    { key: 'monitor', label: 'Monitor Queue', css: 'actions-col-monitor' }
+  ];
+
+  if (sub) {
+    const totalOpen = scored.length;
+    const immediate = scored.filter(x => x.lane === 'immediate').length;
+    sub.textContent = totalOpen + ' action cards · ' + immediate + ' immediate';
+  }
+
+  board.innerHTML = lanes.map(l => {
+    const list = scored.filter(x => x.lane === l.key);
+    const cards = list.length ? list.map(({ a, t, daysToMilestone }) => {
+      const steps = (a.actions || []).slice(0, 3).map(step => '<li>' + esc(step) + '</li>').join('');
+      const dueChip = (daysToMilestone != null)
+        ? '<span class="action-chip date">🏁 ' + esc(fmt(a.milestoneDate)) + (daysToMilestone >= 0 ? ' (D-' + daysToMilestone + ')' : ' (late)') + '</span>'
+        : '';
+      const ownerChip = '<span class="action-chip owner">👤 ' + esc(a.owner || t?.assignedTo || 'Unassigned') + '</span>';
+      const depChip = '<span class="action-chip dep">↑' + esc(String(a.predCount || 0)) + ' ↓' + esc(String(a.sucCount || 0)) + '</span>';
+      return '<article class="action-card">' +
+        '<div class="action-title">' + esc(trunc(a.plainIssue || a.taskName || 'Issue', 110)) + '</div>' +
+        '<div class="action-linked">Linked task: <strong>' + esc(trunc(a.taskName || 'No linked task', 64)) + '</strong></div>' +
+        '<div class="action-desc">' + esc(trunc(a.plainImpact || a.linkageImpact || 'No impact description available.', 180)) + '</div>' +
+        '<div class="action-chips">' + ownerChip + dueChip + depChip + '</div>' +
+        (steps ? '<ul class="action-steps">' + steps + '</ul>' : '') +
+        '<div class="action-impact">Resolution focus: ' + esc(trunc(a.linkageImpact || 'Track linkage impact and remove blockers.', 120)) + '</div>' +
+      '</article>';
+    }).join('') : '<div class="empty" style="padding:18px 10px">No items in this lane.</div>';
+    return '<section class="actions-col ' + l.css + '">' +
+      '<div class="actions-col-hd"><span>' + esc(l.label) + '</span><span>' + list.length + '</span></div>' +
+      '<div class="actions-col-body">' + cards + '</div>' +
+    '</section>';
   }).join('');
 }
 
