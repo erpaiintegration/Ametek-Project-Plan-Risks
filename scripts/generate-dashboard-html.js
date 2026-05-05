@@ -458,6 +458,7 @@ async function main() {
         actions,
         workstream: primaryTask?.workstream || "(Unassigned)",
         owner: primaryTask?.assignedTo || "Unassigned",
+        taskId: primaryTask?.id || null,
         taskName: primaryTask?.name || "(No linked task)",
         predCount: primaryTask?.predCount || 0,
         sucCount: primaryTask?.sucCount || 0,
@@ -610,6 +611,19 @@ ${plotlyScript}
   .loading-bar{height:100%;border-radius:4px;background:var(--blue);transition:width .3s ease;width:0%;}
   .loading-pct{font-size:11px;color:var(--text2);}
   .loading-spin-sm{width:14px;height:14px;border:2px solid #d8e2ee;border-top-color:var(--blue);border-radius:50%;display:inline-block;animation:spin .85s linear infinite;}
+  .board-layout{display:grid;grid-template-columns:420px 1fr;gap:10px;flex:1;min-height:0;}
+  .board-left{display:flex;flex-direction:column;min-height:0;gap:10px;}
+  .board-list{overflow:auto;max-height:240px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);padding:6px;}
+  .board-item{padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);margin-bottom:6px;cursor:pointer;}
+  .board-item:hover{border-color:var(--accent);}
+  .board-item.active{border-color:var(--blue);background:#eef2ff;}
+  .board-tree{overflow:auto;flex:1;border:1px solid var(--border);border-radius:10px;padding:8px;background:var(--surface);}
+  .board-node{padding:5px 6px;border-radius:6px;margin:2px 0;border:1px solid transparent;}
+  .board-node.root{background:#eef2ff;border-color:#c7d2fe;}
+  .board-node.pred{background:#ecfdf5;border-color:#bbf7d0;}
+  .board-node.suc{background:#eff6ff;border-color:#bfdbfe;}
+  .board-node-meta{font-size:11px;color:var(--text2);margin-top:2px;}
+  .board-node-toggle{border:1px solid var(--border);background:var(--surface2);border-radius:4px;cursor:pointer;width:18px;height:18px;line-height:1;font-size:11px;margin-right:6px;}
   @keyframes spin{to{transform:rotate(360deg)}}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
@@ -639,6 +653,7 @@ ${plotlyScript}
   <button class="tab-btn active" id="tabTasks" onclick="switchTab('tasks')">📋 Tasks &amp; Issues</button>
   <button class="tab-btn" id="tabGantt" onclick="switchTab('gantt')">📅 Gantt / Milestones</button>
   <button class="tab-btn" id="tabActions" onclick="switchTab('actions')">🧠 Proposed Actions</button>
+  <button class="tab-btn" id="tabBoard" onclick="switchTab('board')">🧩 Dependency Board</button>
   <button class="tab-btn" id="tabPlan" onclick="switchTab('plan')">🗂️ Plan Explorer</button>
 </div>
 
@@ -702,6 +717,31 @@ ${plotlyScript}
         </thead>
         <tbody id="actionBody"></tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<!-- DEPENDENCY BOARD TAB -->
+<div id="boardContent" style="display:none;flex:1;overflow:hidden;padding:10px 18px 12px;">
+  <div class="board-layout">
+    <div class="board-left">
+      <div class="panel" style="padding:8px;">
+        <div class="panel-title">Issue / Risk Board (select one)</div>
+        <div id="boardList" class="board-list"></div>
+      </div>
+      <div class="panel" style="min-height:0;display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <div class="panel-title" style="margin-bottom:0;">Task Linkage Tree</div>
+          <button id="boardExpandAll" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;">Expand all</button>
+          <button id="boardCollapseAll" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;">Collapse all</button>
+        </div>
+        <div id="boardSummary" style="font-size:12px;color:var(--text2);margin-bottom:6px;">Select an item from the board list.</div>
+        <div id="boardTree" class="board-tree"></div>
+      </div>
+    </div>
+    <div class="panel" style="min-height:0;display:flex;flex-direction:column;">
+      <div class="panel-title">Related Tasks Gantt (selected issue)</div>
+      <div id="boardGantt" style="flex:1;min-height:0;"></div>
     </div>
   </div>
 </div>
@@ -796,10 +836,12 @@ let activeFilter = null;
 let selectedTaskId = null;
 let ganttRendered = false;
 let planRendered = false;
+let boardRendered = false;
 const taskById = new Map(DATA.tasks.map(t => [t.id, t]));
 const taskByUid = new Map(DATA.tasks.filter(t => t.uid != null).map(t => [t.uid, t]));
 let planState = null;
 let planGanttTimer = null;
+const boardState = { selectedActionId: null, expanded: new Set(), tree: null, nodeMap: new Map(), rootTask: null };
 const fmt = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"}) : "—";
 const fmtShort = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—";
 const esc = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -1093,15 +1135,19 @@ function ensurePlotly() {
 function switchTab(tab) {
   const isGantt = tab === "gantt";
   const isActions = tab === "actions";
+  const isBoard = tab === "board";
   const isPlan = tab === "plan";
-  document.getElementById("tabTasks").classList.toggle("active", !isGantt && !isActions && !isPlan);
+  document.getElementById("tabTasks").classList.toggle("active", !isGantt && !isActions && !isPlan && !isBoard);
   document.getElementById("tabGantt").classList.toggle("active", isGantt);
   document.getElementById("tabActions").classList.toggle("active", isActions);
+  document.getElementById("tabBoard").classList.toggle("active", isBoard);
   document.getElementById("tabPlan").classList.toggle("active", isPlan);
   const tc = document.getElementById("tasksContent");
-  tc.style.display = isGantt || isActions || isPlan ? "none" : "contents";
+  tc.style.display = isGantt || isActions || isPlan || isBoard ? "none" : "contents";
   const ac = document.getElementById("actionsContent");
   ac.style.display = isActions ? "flex" : "none";
+  const bc = document.getElementById("boardContent");
+  bc.style.display = isBoard ? "flex" : "none";
   const gc = document.getElementById("ganttContent");
   gc.style.display = isGantt ? "flex" : "none";
   const pc = document.getElementById("planContent");
@@ -1111,6 +1157,12 @@ function switchTab(tab) {
     ensurePlotly().then(() => { renderGantt(); ganttRendered = true; });
   }
   if (isActions) renderActions();
+  if (isBoard && !boardRendered) {
+    ensurePlotly().then(() => {
+      renderBoardTab();
+      boardRendered = true;
+    });
+  }
   if (isPlan && !planRendered) {
     renderPlanCalendar();
     ensurePlotly().then(() => {
@@ -1118,6 +1170,200 @@ function switchTab(tab) {
       planRendered = true;
     });
   }
+}
+
+function buildBoardSubtree(task, relation, depth, maxDepth, trail, nodeMap, idRef) {
+  const node = { id: ++idRef.value, task, relation, depth, children: [] };
+  nodeMap.set(node.id, node);
+  if (depth >= maxDepth) return node;
+  const nextIds = relation === 'pred' ? (task.predIds || []) : (task.sucIds || []);
+  for (const nid of nextIds) {
+    const childTask = taskById.get(nid);
+    if (!childTask) continue;
+    const key = relation + ':' + nid;
+    if (trail.has(key)) continue;
+    const nextTrail = new Set(trail);
+    nextTrail.add(key);
+    node.children.push(buildBoardSubtree(childTask, relation, depth + 1, maxDepth, nextTrail, nodeMap, idRef));
+  }
+  return node;
+}
+
+function buildBoardTree(rootTask) {
+  const nodeMap = new Map();
+  const idRef = { value: 0 };
+  const predRoots = (rootTask.predIds || []).map(pid => {
+    const t = taskById.get(pid);
+    if (!t) return null;
+    return buildBoardSubtree(t, 'pred', 1, 3, new Set(['pred:' + rootTask.id]), nodeMap, idRef);
+  }).filter(Boolean);
+  const sucRoots = (rootTask.sucIds || []).map(sid => {
+    const t = taskById.get(sid);
+    if (!t) return null;
+    return buildBoardSubtree(t, 'suc', 1, 3, new Set(['suc:' + rootTask.id]), nodeMap, idRef);
+  }).filter(Boolean);
+  return { predRoots, sucRoots, nodeMap };
+}
+
+function boardNodeRow(node) {
+  const canExpand = node.children.length > 0;
+  const isOpen = boardState.expanded.has(node.id);
+  const cls = node.relation === 'pred' ? 'pred' : 'suc';
+  const pad = node.depth * 16;
+  const btn = canExpand
+    ? '<button class="board-node-toggle" onclick="toggleBoardNode(' + node.id + ')">' + (isOpen ? '−' : '+') + '</button>'
+    : '<span style="display:inline-block;width:18px;margin-right:6px"></span>';
+  const row = '<div class="board-node ' + cls + '" style="margin-left:' + pad + 'px">' +
+    '<div style="display:flex;align-items:flex-start">' + btn +
+    '<div><div style="font-weight:600">' + esc(trunc(node.task.name, 64)) + '</div>' +
+    '<div class="board-node-meta">UID ' + esc(String(node.task.uid || '—')) + ' · Finish ' + esc(fmt(node.task.finish)) + ' · % ' + esc(String(node.task.pct || 0)) + ' · Pred ' + esc(String(node.task.predCount || 0)) + ' · Suc ' + esc(String(node.task.sucCount || 0)) + '</div></div></div></div>';
+  if (!canExpand || !isOpen) return row;
+  return row + node.children.map(boardNodeRow).join('');
+}
+
+function renderBoardTree() {
+  const host = document.getElementById('boardTree');
+  if (!boardState.rootTask || !boardState.tree) {
+    host.innerHTML = '<div style="color:var(--text2)">Select an item from the board list.</div>';
+    return;
+  }
+  const root = boardState.rootTask;
+  const rootBlock = '<div class="board-node root"><div style="font-weight:700">Root: ' + esc(trunc(root.name, 70)) + '</div>' +
+    '<div class="board-node-meta">Start ' + esc(fmt(root.start)) + ' · Finish ' + esc(fmt(root.finish)) + ' · Owner ' + esc(root.assignedTo || 'Unassigned') + ' · Pred ' + esc(String(root.predCount || 0)) + ' · Suc ' + esc(String(root.sucCount || 0)) + '</div></div>';
+  const predSection = '<div style="margin-top:8px"><div style="font-size:11px;color:var(--text2);margin:4px 0">Predecessors</div>' +
+    (boardState.tree.predRoots.length ? boardState.tree.predRoots.map(boardNodeRow).join('') : '<div style="color:var(--text2)">No predecessors</div>') + '</div>';
+  const sucSection = '<div style="margin-top:8px"><div style="font-size:11px;color:var(--text2);margin:4px 0">Successors</div>' +
+    (boardState.tree.sucRoots.length ? boardState.tree.sucRoots.map(boardNodeRow).join('') : '<div style="color:var(--text2)">No successors</div>') + '</div>';
+  host.innerHTML = rootBlock + predSection + sucSection;
+}
+
+function collectBoardTasks() {
+  if (!boardState.rootTask) return [];
+  const out = [boardState.rootTask];
+  const seen = new Set([boardState.rootTask.id]);
+  if (!boardState.tree) return out;
+  for (const node of boardState.tree.nodeMap.values()) {
+    if (node?.task && !seen.has(node.task.id)) {
+      seen.add(node.task.id);
+      out.push(node.task);
+    }
+  }
+  return out;
+}
+
+function renderBoardGantt() {
+  const host = document.getElementById('boardGantt');
+  const tasks = collectBoardTasks().filter(t => t.start || t.finish);
+  if (!tasks.length) {
+    host.innerHTML = '<div style="padding:12px;color:var(--text2)">No dated tasks to chart.</div>';
+    return;
+  }
+  const rows = tasks.map(t => {
+    const rel = t.id === boardState.rootTask.id ? 'ROOT' : ((boardState.rootTask.predIds || []).includes(t.id) ? 'PRED' : 'SUC');
+    return { t, rel };
+  }).sort((a, b) => String(a.t.finish || a.t.start).localeCompare(String(b.t.finish || b.t.start)));
+
+  const minD = new Date(Math.min(...rows.map(r => new Date(r.t.start || r.t.finish).getTime())));
+  const maxD = new Date(Math.max(...rows.map(r => new Date(r.t.finish || r.t.start).getTime())));
+  minD.setDate(minD.getDate() - 2);
+  maxD.setDate(maxD.getDate() + 10);
+
+  const y = rows.map(r => '[' + r.rel + '] ' + trunc(r.t.name, 46));
+  const base = rows.map(r => r.t.start || r.t.finish);
+  const dur = rows.map(r => Math.max(86400000, new Date(r.t.finish || r.t.start).getTime() - new Date(r.t.start || r.t.finish).getTime() + 86400000));
+  const color = rows.map(r => r.rel === 'ROOT' ? '#4b6bfb' : r.rel === 'PRED' ? '#16a34a' : '#2563eb');
+
+  Plotly.react(host, [{
+    type: 'bar', orientation: 'h', y, base, x: dur,
+    marker: { color },
+    text: rows.map(r => fmtShort(r.t.start || r.t.finish) + ' → ' + fmtShort(r.t.finish || r.t.start)),
+    textposition: 'inside', textfont: { color: '#fff', size: 10 },
+    hovertemplate: rows.map(r => '<b>' + esc(r.t.name) + '</b><br>Relation: ' + r.rel + '<br>Start: ' + fmt(r.t.start) + '<br>Finish: ' + fmt(r.t.finish) + '<br>% Complete: ' + (r.t.pct || 0) + '<br>Owner: ' + esc(r.t.assignedTo || 'Unassigned') + '<extra></extra>')
+  }], {
+    margin: { l: 280, r: 16, t: 10, b: 36 },
+    paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
+    height: Math.max(520, rows.length * 26),
+    xaxis: { type: 'date', range: [minD.toISOString(), maxD.toISOString()], showgrid: true, gridcolor: '#e7edf4', tickfont: { color: '#5f7185', size: 10 } },
+    yaxis: { automargin: true, autorange: 'reversed', tickfont: { color: '#334155', size: 10 } },
+    showlegend: false
+  }, { displayModeBar: false, responsive: true });
+}
+
+function toggleBoardNode(id) {
+  if (boardState.expanded.has(id)) boardState.expanded.delete(id);
+  else boardState.expanded.add(id);
+  renderBoardTree();
+}
+
+function selectBoardAction(actionId) {
+  boardState.selectedActionId = actionId;
+  const action = (DATA.actionItems || []).find(a => a.id === actionId);
+  const rootTask = action?.taskId ? taskById.get(action.taskId) : null;
+  const list = document.getElementById('boardList');
+  if (list) {
+    list.querySelectorAll('.board-item').forEach(el => el.classList.remove('active'));
+    const selectedEl = document.getElementById('board-item-' + actionId);
+    if (selectedEl) selectedEl.classList.add('active');
+  }
+
+  if (!rootTask) {
+    boardState.rootTask = null;
+    boardState.tree = null;
+    boardState.nodeMap = new Map();
+    document.getElementById('boardSummary').textContent = 'No linked task available for this issue/risk.';
+    renderBoardTree();
+    renderBoardGantt();
+    return;
+  }
+
+  boardState.rootTask = rootTask;
+  boardState.tree = buildBoardTree(rootTask);
+  boardState.nodeMap = boardState.tree.nodeMap;
+  boardState.expanded = new Set();
+  for (const n of boardState.nodeMap.values()) {
+    if (n.depth <= 1) boardState.expanded.add(n.id);
+  }
+  document.getElementById('boardSummary').textContent =
+    (action?.plainIssue || simpleSentence(rootTask.name)) +
+    ' | Milestone: ' + (action?.milestoneName ? (action.milestoneName + ' (' + fmt(action.milestoneDate) + ')') : '—') +
+    ' | Linkage: Pred ' + (rootTask.predCount || 0) + ' · Suc ' + (rootTask.sucCount || 0);
+  renderBoardTree();
+  renderBoardGantt();
+}
+
+function renderBoardTab() {
+  const list = document.getElementById('boardList');
+  const items = (DATA.actionItems || []).slice(0, 120);
+  if (!items.length) {
+    list.innerHTML = '<div style="color:var(--text2)">No open issues/risks.</div>';
+    document.getElementById('boardTree').innerHTML = '<div style="color:var(--text2)">No data.</div>';
+    document.getElementById('boardGantt').innerHTML = '<div style="color:var(--text2);padding:10px">No data.</div>';
+    return;
+  }
+  list.innerHTML = items.map(a =>
+    '<div class="board-item" id="board-item-' + a.id + '" onclick="selectBoardAction(\\\'' + a.id + '\\\')">' +
+    '<div style="font-weight:600">' + esc(trunc(a.taskName || a.plainIssue, 54)) + '</div>' +
+    '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + esc(a.workstream || '(Unassigned)') + ' · Milestone ' + esc(fmt(a.milestoneDate)) + '</div>' +
+    '<div style="font-size:11px;margin-top:4px">' + esc(trunc(a.plainIssue, 120)) + '</div>' +
+    '</div>'
+  ).join('');
+
+  const exp = document.getElementById('boardExpandAll');
+  const col = document.getElementById('boardCollapseAll');
+  if (exp && col) {
+    exp.onclick = () => {
+      if (!boardState.nodeMap) return;
+      for (const n of boardState.nodeMap.values()) if (n.children.length) boardState.expanded.add(n.id);
+      renderBoardTree();
+    };
+    col.onclick = () => {
+      boardState.expanded.clear();
+      renderBoardTree();
+    };
+  }
+
+  const first = items.find(a => a.taskId) || items[0];
+  if (first) selectBoardAction(first.id);
 }
 
 function renderActions() {
