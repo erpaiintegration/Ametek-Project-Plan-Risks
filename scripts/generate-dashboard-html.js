@@ -732,6 +732,9 @@ ${plotlyScript}
       <div class="panel" style="min-height:0;display:flex;flex-direction:column;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
           <div class="panel-title" style="margin-bottom:0;">Task Linkage Tree</div>
+          <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;">
+            <input type="checkbox" id="boardCriticalOnly" onchange="toggleBoardCriticalOnly(this.checked)"> Critical path only
+          </label>
           <button id="boardExpandAll" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;">Expand all</button>
           <button id="boardCollapseAll" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);background:var(--surface2);border-radius:6px;cursor:pointer;">Collapse all</button>
         </div>
@@ -841,7 +844,7 @@ const taskById = new Map(DATA.tasks.map(t => [t.id, t]));
 const taskByUid = new Map(DATA.tasks.filter(t => t.uid != null).map(t => [t.uid, t]));
 let planState = null;
 let planGanttTimer = null;
-const boardState = { selectedActionId: null, expanded: new Set(), tree: null, nodeMap: new Map(), rootTask: null };
+const boardState = { selectedActionId: null, expanded: new Set(), tree: null, nodeMap: new Map(), rootTask: null, criticalOnly: false };
 const fmt = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"}) : "—";
 const fmtShort = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—";
 const esc = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -1189,19 +1192,52 @@ function buildBoardSubtree(task, relation, depth, maxDepth, trail, nodeMap, idRe
   return node;
 }
 
+function criticalScore(task) {
+  if (!task) return -1;
+  let score = 0;
+  if (task.isSlipped) score += 40;
+  if (task.isOverdueStart) score += 20;
+  if (task.isDue14) score += 10;
+  if (task.slipDays) score += Math.min(30, task.slipDays);
+  if (task.pct < 100) score += 8;
+  score += (task.predCount || 0) * 2 + (task.sucCount || 0) * 2;
+  return score;
+}
+
+function pickCriticalChild(tasks) {
+  if (!tasks.length) return null;
+  return [...tasks].sort((a, b) => {
+    const s = criticalScore(b) - criticalScore(a);
+    if (s !== 0) return s;
+    return String(a.finish || a.start || '').localeCompare(String(b.finish || b.start || ''));
+  })[0] || null;
+}
+
 function buildBoardTree(rootTask) {
   const nodeMap = new Map();
   const idRef = { value: 0 };
-  const predRoots = (rootTask.predIds || []).map(pid => {
+  let predCandidates = (rootTask.predIds || []).map(pid => {
     const t = taskById.get(pid);
     if (!t) return null;
-    return buildBoardSubtree(t, 'pred', 1, 3, new Set(['pred:' + rootTask.id]), nodeMap, idRef);
   }).filter(Boolean);
-  const sucRoots = (rootTask.sucIds || []).map(sid => {
+  let sucCandidates = (rootTask.sucIds || []).map(sid => {
     const t = taskById.get(sid);
     if (!t) return null;
-    return buildBoardSubtree(t, 'suc', 1, 3, new Set(['suc:' + rootTask.id]), nodeMap, idRef);
   }).filter(Boolean);
+
+  if (boardState.criticalOnly) {
+    const predPick = pickCriticalChild(predCandidates);
+    const sucPick = pickCriticalChild(sucCandidates);
+    predCandidates = predPick ? [predPick] : [];
+    sucCandidates = sucPick ? [sucPick] : [];
+  }
+
+  const predRoots = predCandidates.map(t =>
+    buildBoardSubtree(t, 'pred', 1, 3, new Set(['pred:' + rootTask.id]), nodeMap, idRef)
+  );
+  const sucRoots = sucCandidates.map(t =>
+    buildBoardSubtree(t, 'suc', 1, 3, new Set(['suc:' + rootTask.id]), nodeMap, idRef)
+  );
   return { predRoots, sucRoots, nodeMap };
 }
 
@@ -1295,6 +1331,12 @@ function toggleBoardNode(id) {
   renderBoardTree();
 }
 
+function toggleBoardCriticalOnly(checked) {
+  boardState.criticalOnly = !!checked;
+  if (!boardState.selectedActionId) return;
+  selectBoardAction(boardState.selectedActionId);
+}
+
 function selectBoardAction(actionId) {
   boardState.selectedActionId = actionId;
   const action = (DATA.actionItems || []).find(a => a.id === actionId);
@@ -1350,6 +1392,8 @@ function renderBoardTab() {
 
   const exp = document.getElementById('boardExpandAll');
   const col = document.getElementById('boardCollapseAll');
+  const critical = document.getElementById('boardCriticalOnly');
+  if (critical) critical.checked = !!boardState.criticalOnly;
   if (exp && col) {
     exp.onclick = () => {
       if (!boardState.nodeMap) return;
