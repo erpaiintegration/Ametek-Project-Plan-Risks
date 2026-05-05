@@ -27,9 +27,56 @@ function selVal(p) {
 }
 function relIds(p) { return p?.type === "relation" ? (p.relation || []).map(r => r.id) : []; }
 function relCount(p) { return relIds(p).length; }
+function splitNames(v) {
+  return [...new Set(String(v || "").split(/[;|,/]/).map(x => x.trim()).filter(Boolean))];
+}
 function relCountByNames(props, names) {
   for (const n of names) { const p = props[n]; if (p?.type === "relation") return relCount(p); }
   return 0;
+}
+
+function simpleSentence(s) {
+  return String(s || "")
+    .replace(/\s+/g, " ")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .replace(/^\w/, c => c.toUpperCase())
+    .replace(/[.;:!?]+$/, "");
+}
+
+function copilotCategory(rec) {
+  const seed = `${rec.name} ${rec.category} ${rec.type}`.toLowerCase();
+  if (/(uat|test|defect|qa|validation)/.test(seed)) return "Testing & Quality";
+  if (/(schedule|delay|milestone|late|slip)/.test(seed)) return "Schedule & Milestones";
+  if (/(data|migration|load|master|interface)/.test(seed)) return "Data & Integration";
+  if (/(security|access|grc|auth|firefighter)/.test(seed)) return "Security & Access";
+  if (/(cutover|go-live|deployment|production)/.test(seed)) return "Cutover & Go-Live";
+  if (/(resource|owner|capacity|staff)/.test(seed)) return "Resourcing & Ownership";
+  return rec.category && rec.category !== "(Uncategorized)" ? rec.category : "Execution Risk";
+}
+
+function copilotImpact(severity, linkedCount, type) {
+  const sev = String(severity || "").toLowerCase();
+  const base = /issue/i.test(type)
+    ? "This is blocking work right now"
+    : "This can turn into a blocker if not handled";
+  if (/critical|very high|urgent|severe|high/.test(sev)) {
+    return `${base}, and it could delay key milestones soon.`;
+  }
+  if (linkedCount >= 4) {
+    return `${base}, and it affects multiple dependent tasks.`;
+  }
+  return `${base}, with moderate schedule impact if left open.`;
+}
+
+function copilotActions(rec, linkedTasks) {
+  const names = linkedTasks.slice(0, 3).map(t => t.name);
+  const top = names.length ? `Target first: ${names.join(", ")}.` : "Target the nearest open milestone first.";
+  return [
+    "Assign one owner and due date today.",
+    "Run a 15-minute root-cause check with impacted workstream leads.",
+    top
+  ];
 }
 
 function daysDiff(a, b) {
@@ -119,6 +166,9 @@ async function main() {
     const sucCount = relCountByNames(p, ["Successor Tasks", "Successors"]);
     const predIds = [...relIds(p["Predecessor Tasks"]), ...relIds(p.Predecessors)];
     const sucIds = [...relIds(p["Successor Tasks"]), ...relIds(p.Successors)];
+    const resourceNames = splitNames(rich(p["Resource Names"]));
+    const businessOwners = splitNames(rich(p["Business Validation Owner"]));
+    const assignedTo = resourceNames.length ? resourceNames[0] : (businessOwners[0] || "Unassigned");
 
     const statusRaw = selVal(p["Status Update"]) || selVal(p.Status) || (pct >= 100 ? "Done" : "Not started");
     statusCounts.set(statusRaw, (statusCounts.get(statusRaw) || 0) + 1);
@@ -155,6 +205,9 @@ async function main() {
       sucCount,
       predIds,
       sucIds,
+      resourceNames,
+      businessOwners,
+      assignedTo,
       slipDays: isSlipped ? slipDays : null,
       isSlipped,
       isOverdueStart,
@@ -181,6 +234,42 @@ async function main() {
   const healthAmber = slippedOpen >= 700 || parseFloat(slipRatePct) >= 50 || due14Count >= 60 || overdueStarts >= 40;
   const healthLabel = healthRed ? "🔴 Red" : healthAmber ? "🟠 Amber" : "🟢 Green";
 
+  const taskById = new Map(tasks.map(t => [t.id, t]));
+  const actionItems = riskRecords
+    .map(r => {
+      const linkedTasks = r.linkedTaskIds.map(id => taskById.get(id)).filter(Boolean);
+      const aiCategory = copilotCategory(r);
+      const plainIssue = simpleSentence(r.name);
+      const plainImpact = copilotImpact(r.severity, linkedTasks.length, r.type);
+      const actions = copilotActions(r, linkedTasks);
+      const milestoneHits = linkedTasks.filter(t => t.milestone).slice(0, 3);
+      const milestoneOwners = milestoneHits.map(t => ({ name: t.name, assignedTo: t.assignedTo, finish: t.finish || t.start }));
+      return {
+        id: r.id,
+        type: r.type,
+        severity: r.severity,
+        status: r.status,
+        sourceCategory: r.category,
+        aiCategory,
+        plainIssue,
+        plainImpact,
+        actions,
+        linkedTaskCount: linkedTasks.length,
+        milestoneOwners
+      };
+    })
+    .sort((a, b) => {
+      const score = v => {
+        const s = String(v.severity || "").toLowerCase();
+        if (/(critical|very high|urgent|severe)/.test(s)) return 4;
+        if (/high/.test(s)) return 3;
+        if (/medium|med/.test(s)) return 2;
+        if (/low/.test(s)) return 1;
+        return 0;
+      };
+      return score(b) - score(a) || b.linkedTaskCount - a.linkedTaskCount;
+    });
+
   const payload = {
     generatedAt: now.toISOString(),
     metrics: { total, totalOpen, totalDone, slippedOpen, slipRatePct, overdueStarts, due14: due14Count, openIssues: openIssues.length, openRisks: openRisks.length, healthLabel },
@@ -188,7 +277,8 @@ async function main() {
     statusBreakdown,
     topWorkstreams,
     tasks,
-    riskRecords
+    riskRecords,
+    actionItems
   };
 
   const html = buildHtml(payload);
@@ -310,6 +400,7 @@ ${plotlyScript}
 <div class="tab-bar">
   <button class="tab-btn active" id="tabTasks" onclick="switchTab('tasks')">📋 Tasks &amp; Issues</button>
   <button class="tab-btn" id="tabGantt" onclick="switchTab('gantt')">📅 Gantt / Milestones</button>
+  <button class="tab-btn" id="tabActions" onclick="switchTab('actions')">🧠 Proposed Actions</button>
 </div>
 
 <!-- TASKS TAB -->
@@ -355,6 +446,23 @@ ${plotlyScript}
         <span class="dep-close" onclick="closeDepPanel()">✕</span>
       </div>
       <div class="dep-body" id="depBody"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ACTIONS TAB -->
+<div id="actionsContent" style="display:none;flex:1;overflow:hidden;padding:10px 18px 12px;">
+  <div class="panel" style="height:100%;overflow:hidden;">
+    <div class="panel-title">Copilot Insights — Simplified issue, impact, and recommended resolution</div>
+    <div class="tbl-wrap" style="height:100%;box-shadow:none;border-radius:10px;">
+      <table>
+        <thead>
+          <tr>
+            <th>AI Category</th><th>Issue (Plain)</th><th>Impact (Plain)</th><th>Recommended Actions</th><th>Milestones + Assigned</th>
+          </tr>
+        </thead>
+        <tbody id="actionBody"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -427,13 +535,20 @@ const topRiskKey = task => task.linkedRisks.length ? riskKey(task.linkedRisks[0]
 function renderMilestoneMini() {
   const host = document.getElementById("wsChart");
   if (!host) return;
+  const now = new Date();
+  const from = new Date(now.getTime() - 14 * 86400000);
+  const to = new Date(now.getTime() + 14 * 86400000);
   const milestones = DATA.tasks
     .filter(t => t.milestone && t.pct < 100 && (t.finish || t.start))
+    .filter(t => {
+      const d = new Date(t.finish || t.start);
+      return d >= from && d <= to;
+    })
     .sort((a, b) => (a.finish || a.start || "").localeCompare(b.finish || b.start || ""))
-    .slice(0, 10);
+    .slice(0, 12);
 
   if (!milestones.length) {
-    host.innerHTML = '<div style="padding:12px;color:var(--text2);font-size:12px">No open milestones found.</div>';
+    host.innerHTML = '<div style="padding:12px;color:var(--text2);font-size:12px">No open milestones in the ±2 week window.</div>';
     return;
   }
 
@@ -441,8 +556,8 @@ function renderMilestoneMini() {
     type: 'scatter',
     mode: 'markers+text',
     x: milestones.map(m => m.finish || m.start),
-    y: milestones.map(m => trunc(m.name, 18)),
-    text: milestones.map(m => m.linkedRisks.length ? '⚠' : '◆'),
+    y: milestones.map(m => trunc(m.name, 16)),
+    text: milestones.map(m => (m.linkedRisks.length ? '⚠ ' : '◆ ') + trunc(m.assignedTo || 'Unassigned', 10)),
     textposition: 'middle right',
     marker: {
       size: 12,
@@ -450,7 +565,7 @@ function renderMilestoneMini() {
       color: milestones.map(m => m.linkedRisks.length ? '#d85b72' : '#2f8f6b'),
       line: { width: 1, color: milestones.map(m => m.linkedRisks.length ? '#b43b55' : '#256f54') }
     },
-    hovertemplate: milestones.map(m => '<b>' + esc(m.name) + '</b><br>' + fmt(m.finish || m.start) + '<extra></extra>')
+    hovertemplate: milestones.map(m => '<b>' + esc(m.name) + '</b><br>Assigned: ' + esc(m.assignedTo || 'Unassigned') + '<br>Date: ' + fmt(m.finish || m.start) + '<extra></extra>')
   };
   const layout = {
     margin: { l: 82, r: 8, t: 8, b: 18 },
@@ -461,6 +576,7 @@ function renderMilestoneMini() {
       showgrid: true,
       gridcolor: '#e7edf4',
       tickfont: { size: 9, color: '#5f7185' },
+      range: [from.toISOString(), to.toISOString()],
       zeroline: false
     },
     yaxis: {
@@ -477,13 +593,40 @@ function renderMilestoneMini() {
 // ── Tab switching ──────────────────────────────────────────────────────────
 function switchTab(tab) {
   const isGantt = tab === "gantt";
+  const isActions = tab === "actions";
   document.getElementById("tabTasks").classList.toggle("active", !isGantt);
   document.getElementById("tabGantt").classList.toggle("active", isGantt);
+  document.getElementById("tabActions").classList.toggle("active", isActions);
   const tc = document.getElementById("tasksContent");
-  tc.style.display = isGantt ? "none" : "contents";
+  tc.style.display = isGantt || isActions ? "none" : "contents";
+  const ac = document.getElementById("actionsContent");
+  ac.style.display = isActions ? "flex" : "none";
   const gc = document.getElementById("ganttContent");
   gc.style.display = isGantt ? "flex" : "none";
   if (isGantt && !ganttRendered) { renderGantt(); ganttRendered = true; }
+  if (isActions) renderActions();
+}
+
+function renderActions() {
+  const body = document.getElementById("actionBody");
+  const items = DATA.actionItems || [];
+  if (!items.length) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">No open risks/issues to summarize.</td></tr>';
+    return;
+  }
+  body.innerHTML = items.slice(0, 250).map(a => {
+    const acts = (a.actions || []).map(x => '<div>• ' + esc(x) + '</div>').join('');
+    const milestones = (a.milestoneOwners || []).length
+      ? a.milestoneOwners.map(m => '<div><span class="pill done">🏁</span> ' + esc(trunc(m.name, 28)) + ' — ' + esc(m.assignedTo || 'Unassigned') + ' (' + fmt(m.finish) + ')</div>').join('')
+      : '<span style="color:var(--text2)">No linked milestones</span>';
+    return '<tr>' +
+      '<td><span class="pill issue">' + esc(a.aiCategory) + '</span><div style="font-size:10px;color:var(--text2);margin-top:4px">' + esc(a.type) + ' · ' + esc(a.severity || '(Unrated)') + '</div></td>' +
+      '<td>' + esc(a.plainIssue) + '</td>' +
+      '<td>' + esc(a.plainImpact) + '</td>' +
+      '<td>' + acts + '</td>' +
+      '<td>' + milestones + '</td>' +
+      '</tr>';
+  }).join('');
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
