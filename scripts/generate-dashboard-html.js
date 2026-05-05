@@ -9,6 +9,7 @@ const CHARTJS_PATH = path.join(__dirname, "..", "node_modules", "chart.js", "dis
 const CHARTJS_INLINE = fs.existsSync(CHARTJS_PATH) ? fs.readFileSync(CHARTJS_PATH, "utf8") : null;
 const PLOTLY_PATH = path.join(__dirname, "..", "node_modules", "plotly.js-dist-min", "plotly.min.js");
 const PLOTLY_INLINE = fs.existsSync(PLOTLY_PATH) ? fs.readFileSync(PLOTLY_PATH, "utf8") : null;
+const INLINE_LIBS = process.env.DASHBOARD_INLINE_LIBS === "1";
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const TASKS_DB_ID = process.env.NOTION_TASKS_DB_ID;
 const RISKS_DB_ID = process.env.NOTION_RISKS_DB_ID || "357ae9be-8a60-8190-b720-c130c7104cf1";
@@ -259,8 +260,6 @@ async function main() {
       sucCount,
       predIds,
       sucIds,
-      resourceNames,
-      businessOwners,
       assignedTo,
       slipDays: isSlipped ? slipDays : null,
       isSlipped,
@@ -348,10 +347,10 @@ function buildHtml(payload) {
   const riskTypeOptions = payload.riskTypeBreakdown
     .map(r => `<option value="${r.typeKey.replace(/"/g, "&quot;")}">${r.typeKey} (${r.count})</option>`)
     .join("\n          ");
-  const chartScript = CHARTJS_INLINE
+  const chartScript = INLINE_LIBS && CHARTJS_INLINE
     ? `<script>${CHARTJS_INLINE.replace(/<\/script>/gi, "<\\/script>")}<\/script>`
     : `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"><\/script>`;
-  const plotlyScript = PLOTLY_INLINE
+  const plotlyScript = INLINE_LIBS && PLOTLY_INLINE
     ? `<script>${PLOTLY_INLINE.replace(/<\/script>/gi, "<\\/script>")}<\/script>`
     : `<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"><\/script>`;
 
@@ -615,6 +614,7 @@ let planRendered = false;
 const taskById = new Map(DATA.tasks.map(t => [t.id, t]));
 const taskByUid = new Map(DATA.tasks.filter(t => t.uid != null).map(t => [t.uid, t]));
 let planState = null;
+let planGanttTimer = null;
 const fmt = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"}) : "—";
 const fmtShort = d => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—";
 const esc = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -665,7 +665,28 @@ function buildPlanState() {
     if (n.children.length && (n.outlineLevel == null || n.outlineLevel <= 2)) expanded.add(n.id);
   });
 
-  return { byId, roots, expanded };
+  const issueRollup = new Map();
+  const mark = (id) => {
+    if (issueRollup.has(id)) return issueRollup.get(id);
+    const node = byId.get(id);
+    if (!node) return false;
+    const selfIssue = (node.task.linkedRisks || []).some(r => /issue/i.test(r.type));
+    if (selfIssue) {
+      issueRollup.set(id, true);
+      return true;
+    }
+    for (const cid of node.children) {
+      if (mark(cid)) {
+        issueRollup.set(id, true);
+        return true;
+      }
+    }
+    issueRollup.set(id, false);
+    return false;
+  };
+  roots.forEach(id => mark(id));
+
+  return { byId, roots, expanded, issueRollup };
 }
 
 function visiblePlanRows() {
@@ -685,14 +706,7 @@ function visiblePlanRows() {
 
 function hasIssueRollup(nodeId) {
   if (!planState) return false;
-  const n = planState.byId.get(nodeId);
-  if (!n) return false;
-  const selfIssue = (n.task.linkedRisks || []).some(r => /issue/i.test(r.type));
-  if (selfIssue) return true;
-  for (const cid of n.children) {
-    if (hasIssueRollup(cid)) return true;
-  }
-  return false;
+  return !!planState.issueRollup.get(nodeId);
 }
 
 function renderPlanCalendar() {
@@ -763,7 +777,8 @@ function renderPlanExplorer() {
       '</tr>';
   }).join('');
 
-  renderPlanGantt(rows);
+  if (planGanttTimer) clearTimeout(planGanttTimer);
+  planGanttTimer = setTimeout(() => renderPlanGantt(rows), 0);
 }
 
 function togglePlanNode(id) {
@@ -775,7 +790,7 @@ function togglePlanNode(id) {
 
 function renderPlanGantt(rows) {
   const host = document.getElementById('planGantt');
-  const taskRows = rows.filter(r => r.node.task.pct < 100 && (r.node.start || r.node.finish)).slice(0, 220);
+  const taskRows = rows.filter(r => r.node.task.pct < 100 && (r.node.start || r.node.finish)).slice(0, 140);
   if (!taskRows.length) {
     host.innerHTML = '<div style="padding:10px;color:var(--text2)">No visible dated tasks to chart.</div>';
     return;
