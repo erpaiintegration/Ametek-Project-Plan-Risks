@@ -483,28 +483,48 @@ async function main() {
       return score(b) - score(a) || b.linkedTaskCount - a.linkedTaskCount;
     });
 
-  const payload = {
+  // Split into fast-load (boostrap) and async-load (full) payloads
+  // Bootstrap tasks: top 200 at-risk tasks for instant render
+  const tasksByRisk = [...tasks]
+    .sort((a, b) => {
+      const scoreA = (a.isSlipped ? 40 : 0) + (a.isOverdueStart ? 25 : 0) + (a.isDue14 ? 15 : 0) + (a.linkedRisks?.length || 0) * 10;
+      const scoreB = (b.isSlipped ? 40 : 0) + (b.isOverdueStart ? 25 : 0) + (b.isDue14 ? 15 : 0) + (b.linkedRisks?.length || 0) * 10;
+      return scoreB - scoreA;
+    });
+  const bootstrapTasks = tasksByRisk.slice(0, 200);
+  
+  const bootstrapPayload = {
     generatedAt: now.toISOString(),
     metrics: { total, totalOpen, totalDone, slippedOpen, slipRatePct, overdueStarts, due14: due14Count, openIssues: openIssues.length, openRisks: openRisks.length, healthLabel },
     riskTypeBreakdown,
     statusBreakdown,
     topWorkstreams,
-    tasks,
     riskRecords,
-    actionItems
+    actionItems,
+    tasks: bootstrapTasks
   };
 
-  const html = buildHtml(payload);
+  const fullTaskPayload = {
+    generatedAt: now.toISOString(),
+    tasks
+  };
+
+  const html = buildHtml(bootstrapPayload);
+  
+  // Write full tasks data separately for async loading
+  const dataFile = path.join(__dirname, "..", "dashboard-data.json");
+  fs.writeFileSync(dataFile, JSON.stringify(fullTaskPayload), "utf8");
+  console.log(`Dashboard data written to: ${dataFile}`);
   fs.writeFileSync(OUT_FILE, html, "utf8");
   console.log(`\nDashboard written to: ${OUT_FILE}`);
   console.log(`Open it in a browser, then embed the hosted URL in Notion via /embed`);
 }
 
-function buildHtml(payload) {
-  const data = JSON.stringify(payload).replace(/<\/script>/gi, "<\\/script>");
-  const workstreams = [...new Set(payload.tasks.map(t => t.workstream))].sort();
+function buildHtml(bootstrapPayload) {
+  const data = JSON.stringify(bootstrapPayload).replace(/<\/script>/gi, "<\\/script>");
+  const workstreams = [...new Set(bootstrapPayload.tasks.map(t => t.workstream))].sort();
   const wsOptions = workstreams.map(w => `<option value="${w.replace(/"/g,'&quot;')}">${w}</option>`).join('\n          ');
-  const riskTypeOptions = payload.riskTypeBreakdown
+  const riskTypeOptions = bootstrapPayload.riskTypeBreakdown
     .map(r => `<option value="${r.typeKey.replace(/"/g, "&quot;")}">${r.typeKey} (${r.count})</option>`)
     .join("\n          ");
   const chartScript = ''; // Chart.js loaded lazily after first paint
@@ -949,8 +969,8 @@ let selectedTaskId = null;
 let ganttRendered = false;
 let planRendered = false;
 let boardRendered = false;
-const taskById = new Map(DATA.tasks.map(t => [t.id, t]));
-const taskByUid = new Map(DATA.tasks.filter(t => t.uid != null).map(t => [t.uid, t]));
+let taskById = new Map();
+let taskByUid = new Map();
 let planState = null;
 let planGanttTimer = null;
 const boardState = { selectedActionId: null, selectedNodeId: null, expanded: new Set(), tree: null, nodeMap: new Map(), rootTask: null, criticalOnly: false, drivingOnly: false };
@@ -962,6 +982,47 @@ const riskKey = r => (r.type || "Risk") + " — " + (r.category || "(Uncategoriz
 const topRiskKey = task => task.linkedRisks.length ? riskKey(task.linkedRisks[0]) : "No linked risk";
 const PERF = { initialTaskRows: 180, maxTaskRows: 320 };
 let atRiskTasksCache = null;
+
+async function loadTaskData() {
+  try {
+    // Try fetch first (for GitHub Pages HTTPS)
+    try {
+      const response = await fetch('dashboard-data.json');
+      if (response.ok) {
+        const taskData = await response.json();
+        DATA.tasks = taskData.tasks || [];
+        taskById = new Map(DATA.tasks.map(t => [t.id, t]));
+        taskByUid = new Map(DATA.tasks.filter(t => t.uid != null).map(t => [t.uid, t]));
+        return;
+      }
+    } catch (e) {
+      // Fall back to XMLHttpRequest for file:// protocol
+    }
+    
+    // XMLHttpRequest fallback for file:// access
+    return await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', 'dashboard-data.json', true);
+      xhr.onload = () => {
+        try {
+          const taskData = JSON.parse(xhr.responseText);
+          DATA.tasks = taskData.tasks || [];
+          taskById = new Map(DATA.tasks.map(t => [t.id, t]));
+          taskByUid = new Map(DATA.tasks.filter(t => t.uid != null).map(t => [t.uid, t]));
+          resolve();
+        } catch (e) {
+          reject(e);
+        }
+      };
+      xhr.onerror = () => reject(new Error('Failed to load task data'));
+      xhr.send();
+    });
+  } catch (err) {
+    console.error('Error loading dashboard-data.json:', err);
+    DATA.tasks = [];
+    setLoadingText('⚠️ Data failed to load. Some features may be unavailable.');
+  }
+}
 
 function scheduleNonBlocking(fn) {
   if (typeof requestIdleCallback === 'function') {
@@ -2350,7 +2411,8 @@ function renderGantt() {
   Plotly.react(document.getElementById('ganttPlot'), traces, layout, { displayModeBar: false, responsive: true });
 }
 
-init().catch(e => console.error('Dashboard init failed:', e));
+loadTaskData().then(() => init()).catch(e => console.error('Dashboard init failed:', e));
+
 <\/script>
 </body>
 </html>`;
