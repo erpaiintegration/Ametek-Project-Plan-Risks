@@ -1369,30 +1369,41 @@ function renderBoardGantt() {
     });
   }
 
-  const depAnnotations = rows
+  const depSegments = rows
     .filter(r => r.parentTaskId && yById.has(r.parentTaskId))
     .map(r => {
       const parentTask = taskById.get(r.parentTaskId);
       if (!parentTask) return null;
+      const fromX = parentTask.finish || parentTask.start;
+      const toX = r.task.start || r.task.finish;
+      if (!fromX || !toX) return null;
       return {
-        x: r.task.start || r.task.finish,
-        y: yById.get(r.task.id),
-        ax: parentTask.finish || parentTask.start,
-        ay: yById.get(parentTask.id),
-        xref: 'x',
-        yref: 'y',
-        axref: 'x',
-        ayref: 'y',
-        showarrow: true,
-        arrowhead: 2,
-        arrowsize: 1,
-        arrowwidth: 1,
-        arrowcolor: '#94a3b8',
-        opacity: 0.9,
-        text: ''
+        fromX,
+        fromY: yById.get(parentTask.id),
+        toX,
+        toY: yById.get(r.task.id)
       };
     })
     .filter(Boolean);
+
+  if (depSegments.length) {
+    const x = [];
+    const y = [];
+    depSegments.forEach(seg => {
+      x.push(seg.fromX, seg.toX, null);
+      y.push(seg.fromY, seg.toY, null);
+    });
+    traces.push({
+      type: 'scatter',
+      mode: 'lines+markers',
+      x,
+      y,
+      line: { color: '#94a3b8', width: 1, dash: 'dot' },
+      marker: { size: 4, color: '#94a3b8' },
+      hoverinfo: 'skip',
+      showlegend: false
+    });
+  }
 
   Plotly.react(host, traces, {
     margin: { l: 280, r: 16, t: 10, b: 36 },
@@ -1400,7 +1411,6 @@ function renderBoardGantt() {
     height: Math.max(520, rows.length * 26),
     xaxis: { type: 'date', range: [minD.toISOString(), maxD.toISOString()], showgrid: true, gridcolor: '#e7edf4', tickfont: { color: '#5f7185', size: 10 } },
     yaxis: { automargin: true, autorange: 'reversed', tickfont: { color: '#334155', size: 10 } },
-    annotations: depAnnotations,
     showlegend: false
   }, { displayModeBar: false, responsive: true });
 }
