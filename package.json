@@ -1,0 +1,41 @@
+{
+  "name": "ametek-project-plan-risks",
+  "version": "1.0.0",
+  "description": "Notion integration for Ametek Project Plan Risks (read and update table rows)",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "import": "node scripts/import-msp.js",
+    "export:manual": "node scripts/export-manual-import-csv.js",
+    "link:relations": "node scripts/link-relations.js",
+    "link:context": "node scripts/link-project-context.js",
+    "sync:risks": "node scripts/sync-risks-issues.js",
+    "dashboard:schedule": "node scripts/refresh-schedule-dashboard.js",
+    "dashboard:html": "node scripts/generate-dashboard-html.js",
+    "dashboard:pages": "npm run dashboard:html && node scripts/prepare-github-pages.js",
+    "categorize:risks": "node scripts/categorize-risks.js",
+    "categorize:risks:dry": "node scripts/categorize-risks.js --dry-run"
+  },
+  "keywords": [
+    "notion",
+    "risk-management",
+    "ametek"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@notionhq/client": "^2.2.15",
+    "csv-parse": "^6.2.1",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "chart.js": "^4.5.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}
