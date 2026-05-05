@@ -199,6 +199,9 @@ function buildHtml(payload) {
   const data = JSON.stringify(payload).replace(/<\/script>/gi, "<\\/script>");
   const workstreams = [...new Set(payload.tasks.map(t => t.workstream))].sort();
   const wsOptions = workstreams.map(w => `<option value="${w.replace(/"/g,'&quot;')}">${w}</option>`).join('\n          ');
+  const riskTypeOptions = payload.riskTypeBreakdown
+    .map(r => `<option value="${r.typeKey.replace(/"/g, "&quot;")}">${r.typeKey} (${r.count})</option>`)
+    .join("\n          ");
   const chartScript = CHARTJS_INLINE
     ? `<script>${CHARTJS_INLINE.replace(/<\/script>/gi, "<\\/script>")}<\/script>`
     : `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"><\/script>`;
@@ -274,18 +277,18 @@ ${chartScript}
   /* gantt */
   .gantt-outer{flex:1;display:flex;flex-direction:column;padding:0 18px 10px;overflow:hidden;}
   .gantt-controls{display:flex;align-items:center;gap:10px;padding:8px 0 6px;flex-shrink:0;flex-wrap:wrap;}
-  .gantt-controls select{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;}
+  .gantt-controls select{background:#fff;color:#1f2937;border:1px solid #d1d5db;border-radius:6px;padding:4px 8px;font-size:12px;}
   .gantt-controls label{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;}
   .gantt-controls input[type=checkbox]{accent-color:var(--blue);}
   .gantt-legend{display:flex;gap:12px;font-size:11px;color:var(--text2);margin-left:auto;flex-wrap:wrap;}
   .gantt-legend span{display:flex;align-items:center;gap:4px;}
-  .gantt-count{font-size:11px;color:var(--text2);}
-  .gantt-body{flex:1;display:flex;overflow:hidden;border:1px solid var(--border);border-radius:8px;}
-  .gantt-names{width:220px;flex-shrink:0;overflow:hidden;border-right:1px solid var(--border);display:flex;flex-direction:column;}
-  .gantt-name-hdr{height:36px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);flex-shrink:0;}
+  .gantt-count{font-size:11px;color:var(--text2);font-weight:600;}
+  .gantt-body{flex:1;display:flex;overflow:hidden;border:1px solid #d1d5db;border-radius:8px;background:#fff;}
+  .gantt-names{width:240px;flex-shrink:0;overflow:hidden;border-right:1px solid #d1d5db;display:flex;flex-direction:column;background:#fff;}
+  .gantt-name-hdr{height:36px;background:#f8fafc;border-bottom:1px solid #d1d5db;display:flex;align-items:center;padding:0 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#475569;flex-shrink:0;}
   .gantt-name-list{flex:1;overflow-y:hidden;}
-  .gantt-chart-wrap{flex:1;overflow:auto;}
-  #ganttTip{position:fixed;background:#1a1d27;border:1px solid #2e3350;border-radius:6px;padding:8px 12px;font-size:11px;pointer-events:none;display:none;z-index:9999;max-width:320px;line-height:1.6;white-space:pre-wrap;}
+  .gantt-chart-wrap{flex:1;overflow:auto;background:#fff;}
+  #ganttTip{position:fixed;background:#ffffff;border:1px solid #cbd5e1;border-radius:6px;padding:8px 12px;font-size:11px;pointer-events:none;display:none;z-index:9999;max-width:360px;line-height:1.6;white-space:pre-wrap;color:#0f172a;box-shadow:0 6px 20px rgba(0,0,0,.15);}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
 </head>
@@ -355,16 +358,31 @@ ${chartScript}
           ${wsOptions}
         </select>
       </label>
-      <label><input type="checkbox" id="ganttMilestones" checked onchange="ganttRendered=false;renderGantt()"> Milestones</label>
+      <label>Timeline:
+        <select id="ganttWindow" onchange="ganttRendered=false;renderGantt()">
+          <option value="auto">Auto</option>
+          <option value="3m">Next 3 months</option>
+          <option value="6m">Next 6 months</option>
+          <option value="12m">Next 12 months</option>
+        </select>
+      </label>
+      <label>Risk type:
+        <select id="ganttRiskType" onchange="ganttRendered=false;renderGantt()">
+          <option value="">All tasks</option>
+          <option value="__any__">Any risk-linked task</option>
+          ${riskTypeOptions}
+        </select>
+      </label>
+      <label><input type="checkbox" id="ganttMilestones" checked onchange="ganttRendered=false;renderGantt()"> Milestone lane</label>
       <label><input type="checkbox" id="ganttIssues" checked onchange="ganttRendered=false;renderGantt()"> Has issues</label>
       <label><input type="checkbox" id="ganttSlipped" checked onchange="ganttRendered=false;renderGantt()"> Slipped</label>
       <span class="gantt-count" id="ganttCount"></span>
       <div class="gantt-legend">
-        <span><svg width="12" height="10"><polygon points="6,0 12,5 6,10 0,5" fill="#22c55e"/></svg> Milestone</span>
-        <span><svg width="12" height="10"><polygon points="6,0 12,5 6,10 0,5" fill="#ef5350"/></svg> Slipped milestone</span>
-        <span><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="#92400e"/></svg> Slipped task</span>
-        <span><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="#1e3a8a"/></svg> In progress</span>
-        <span><svg width="10" height="10"><circle cx="5" cy="5" r="5" fill="#ef5350"/></svg> Has issue</span>
+        <span><svg width="12" height="10"><polygon points="6,0 12,5 6,10 0,5" fill="#16a34a"/></svg> Milestone</span>
+        <span><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="#ea580c"/></svg> Slipped task</span>
+        <span><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="#2563eb"/></svg> Active task</span>
+        <span><svg width="10" height="10"><circle cx="5" cy="5" r="5" fill="#dc2626"/></svg> Risk marker</span>
+        <span style="font-weight:600">↑ / ↓ = shown predecessors/successors</span>
       </div>
     </div>
     <div class="gantt-body">
@@ -548,144 +566,251 @@ function renderDepPanel(task) {
 
 // ── Gantt tab ──────────────────────────────────────────────────────────────
 function renderGantt() {
-  const wsFilter  = document.getElementById("ganttWs").value;
+  const wsFilter = document.getElementById("ganttWs").value;
+  const timeWindow = document.getElementById("ganttWindow").value;
+  const riskFilter = document.getElementById("ganttRiskType").value;
   const showMiles = document.getElementById("ganttMilestones").checked;
   const showIssue = document.getElementById("ganttIssues").checked;
-  const showSlip  = document.getElementById("ganttSlipped").checked;
+  const showSlip = document.getElementById("ganttSlipped").checked;
 
-  let tasks = DATA.tasks.filter(t => {
+  const hasRiskType = (t, key) => t.linkedRisks.some(r => (r.type + " — " + r.category) === key);
+
+  let selected = DATA.tasks.filter(t => {
     if (t.pct >= 100) return false;
     if (wsFilter && t.workstream !== wsFilter) return false;
-    return (showMiles && t.milestone) ||
-           (showIssue && t.linkedRisks.length > 0) ||
-           (showSlip  && t.isSlipped);
-  });
-  tasks.sort((a,b) => {
-    const am = a.milestone ? 0 : 1, bm = b.milestone ? 0 : 1;
-    if (am !== bm) return am - bm;
-    return (a.finish||"").localeCompare(b.finish||"");
+
+    if (riskFilter === "__any__" && t.linkedRisks.length === 0) return false;
+    if (riskFilter && riskFilter !== "__any__" && !hasRiskType(t, riskFilter)) return false;
+
+    if (!riskFilter) {
+      const match = (showMiles && t.milestone) || (showIssue && t.linkedRisks.length > 0) || (showSlip && t.isSlipped);
+      if (!match) return false;
+    }
+    return true;
   });
 
-  document.getElementById("ganttCount").textContent = \`\${tasks.length} items\`;
-  if (!tasks.length) {
+  const milestones = showMiles ? selected.filter(t => t.milestone) : [];
+  const tasks = selected.filter(t => !t.milestone).sort((a, b) => (a.finish || "").localeCompare(b.finish || ""));
+  const visibleIds = new Set(tasks.map(t => t.id));
+
+  const countLabel = tasks.length + " tasks" + (milestones.length ? (" + " + milestones.length + " milestones") : "");
+  document.getElementById("ganttCount").textContent = countLabel;
+
+  if (!tasks.length && !milestones.length) {
     document.getElementById("ganttNames").innerHTML = '<div style="padding:20px;color:var(--text2);font-size:12px">No tasks match filters.</div>';
     document.getElementById("ganttSvgWrap").innerHTML = "";
     return;
   }
 
-  const allMs = tasks.flatMap(t => [t.start,t.finish,t.baselineFinish].filter(Boolean).map(d=>new Date(d).getTime())).filter(n=>!isNaN(n));
-  const minDate = new Date(Math.min(...allMs)); minDate.setDate(1);
-  const maxDate = new Date(Math.max(...allMs)); maxDate.setMonth(maxDate.getMonth()+1,1);
-  const totalDays = Math.max(1, (maxDate - minDate)/86400000);
-  const ppd = Math.max(1.2, Math.min(5, 1100/totalDays));
-  const ROW_H=28, HDR_H=36;
-  const svgW = Math.ceil(totalDays*ppd)+30;
-  const svgH = HDR_H + tasks.length*ROW_H;
-  const toX = d => { if (!d) return null; const ms=new Date(d).getTime(); return isNaN(ms)?null:Math.round((ms-minDate.getTime())/86400000*ppd)+10; };
-  const todayX = toX(new Date().toISOString().slice(0,10));
+  const datePool = [].concat(tasks, milestones)
+    .flatMap(t => [t.start, t.finish, t.baselineFinish].filter(Boolean).map(d => new Date(d).getTime()))
+    .filter(n => !isNaN(n));
 
-  // Month gridlines
-  const months=[];
-  const cur=new Date(minDate);
-  while(cur<maxDate){ months.push({x:toX(cur.toISOString().slice(0,10)),lbl:cur.toLocaleDateString("en-US",{month:"short",year:"2-digit"})}); cur.setMonth(cur.getMonth()+1); }
+  let minDate = new Date(Math.min.apply(null, datePool));
+  let maxDate = new Date(Math.max.apply(null, datePool));
+  minDate.setDate(1);
+  maxDate.setMonth(maxDate.getMonth() + 1, 1);
 
-  const svg=[
-    \`<svg xmlns="http://www.w3.org/2000/svg" width="\${svgW}" height="\${svgH}" style="display:block;min-width:\${svgW}px">\`,
-    \`<rect width="\${svgW}" height="\${svgH}" fill="#0f1117"/>\`,
-  ];
-  months.forEach(m=>{
-    svg.push(\`<line x1="\${m.x}" y1="0" x2="\${m.x}" y2="\${svgH}" stroke="#2e3350" stroke-width="1"/>\`);
-    svg.push(\`<text x="\${m.x+4}" y="14" fill="#9096b8" font-size="10" font-family="sans-serif">\${m.lbl}</text>\`);
-  });
-  svg.push(\`<rect width="\${svgW}" height="\${HDR_H}" fill="#1a1d27"/>\`);
-  svg.push(\`<line x1="0" y1="\${HDR_H}" x2="\${svgW}" y2="\${HDR_H}" stroke="#2e3350"/>\`);
-  if(todayX!=null){
-    svg.push(\`<line x1="\${todayX}" y1="\${HDR_H}" x2="\${todayX}" y2="\${svgH}" stroke="#ef5350" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>\`);
-    svg.push(\`<text x="\${todayX+3}" y="\${HDR_H-5}" fill="#ef5350" font-size="9" font-family="sans-serif">Today</text>\`);
+  if (timeWindow !== "auto") {
+    const now = new Date();
+    now.setDate(1);
+    minDate = new Date(now);
+    const monthsOut = timeWindow === "3m" ? 3 : timeWindow === "6m" ? 6 : 12;
+    maxDate = new Date(now);
+    maxDate.setMonth(maxDate.getMonth() + monthsOut, 1);
   }
 
-  const nameRows=[];
-  tasks.forEach((t,i)=>{
-    const y=HDR_H+i*ROW_H, rowBg=i%2===0?"#1a1d27":"#0f1117";
-    svg.push(\`<rect x="0" y="\${y}" width="\${svgW}" height="\${ROW_H}" fill="\${rowBg}"/>\`);
-    const x1=toX(t.start), x2=toX(t.finish), xBL=t.baselineFinish?toX(t.baselineFinish):null;
-    const my=y+ROW_H/2;
+  const totalDays = Math.max(1, (maxDate - minDate) / 86400000);
+  const ppd = Math.max(1.1, Math.min(5.5, 1250 / totalDays));
+  const ROW_H = 30;
+  const HDR_H = 38;
+  const hasMilestoneLane = milestones.length > 0;
+  const extraRows = hasMilestoneLane ? 1 : 0;
+  const svgW = Math.ceil(totalDays * ppd) + 80;
+  const svgH = HDR_H + (tasks.length + extraRows) * ROW_H;
 
-    // Tooltip lines
-    const tip=[
-      \`#\${t.uid||"?"} \${t.name}\`,
-      \`Workstream: \${t.workstream}\`,
-      \`Finish: \${fmt(t.finish)}\${t.baselineFinish?" (baseline: "+fmt(t.baselineFinish)+")":""}\`,
-      t.slipDays?\`⚠ Slipped +\${t.slipDays} days\`:"",
-      ...t.linkedRisks.map(r=>\`⚑ \${r.type}: \${r.name} [\${r.severity}] — \${r.category}\`),
-    ].filter(Boolean).join("\\n");
-    const tipSvg=tip.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const toX = d => {
+    if (!d) return null;
+    const ms = new Date(d).getTime();
+    if (isNaN(ms)) return null;
+    return Math.round((ms - minDate.getTime()) / 86400000 * ppd) + 20;
+  };
 
-    if(!t.milestone){
-      const barColor=t.isSlipped?"#92400e":t.pct>0?"#1e3a8a":"#374151";
-      const bdrColor=t.isSlipped?"#f59e0b":t.pct>0?"#3b82f6":"#6b7280";
-      if(x1!=null&&x2!=null){
-        const bw=Math.max(6,x2-x1);
-        svg.push(\`<rect x="\${x1}" y="\${y+7}" width="\${bw}" height="\${ROW_H-14}" rx="3" fill="\${barColor}" stroke="\${bdrColor}" stroke-width="0.5"><title>\${tipSvg}</title></rect>\`);
-        if(t.pct>0&&t.pct<100) svg.push(\`<rect x="\${x1}" y="\${y+7}" width="\${Math.max(4,Math.round(bw*t.pct/100))}" height="\${ROW_H-14}" rx="3" fill="\${bdrColor}" opacity="0.9"/>\`);
-        if(xBL&&Math.abs(xBL-x2)>3) svg.push(\`<line x1="\${xBL}" y1="\${y+4}" x2="\${xBL}" y2="\${y+ROW_H-4}" stroke="#ff9800" stroke-width="2.5" opacity="0.7"><title>Baseline: \${fmt(t.baselineFinish)}</title></line>\`);
-        if(t.linkedRisks.length>0){
-          const dx=x2+7, it=t.linkedRisks.map(r=>r.type+": "+r.name+" ["+r.severity+"] — "+r.category).join("; ").replace(/&/g,"&amp;").replace(/</g,"&lt;");
-          svg.push(\`<circle cx="\${dx}" cy="\${my}" r="6" fill="#ef5350" stroke="#450a0a" stroke-width="1"><title>\${it}</title></circle>\`);
-          svg.push(\`<text x="\${dx}" y="\${my+4}" text-anchor="middle" font-size="9" fill="white" font-weight="bold" font-family="sans-serif">!</text>\`);
-        }
+  const sevScore = s => {
+    const v = String(s || "").toLowerCase();
+    if (/(critical|very high|urgent|severe)/.test(v)) return 4;
+    if (/high/.test(v)) return 3;
+    if (/medium|med/.test(v)) return 2;
+    if (/low/.test(v)) return 1;
+    return 0;
+  };
+
+  const riskIcon = t => {
+    if (!t.linkedRisks.length) return "";
+    let top = t.linkedRisks[0];
+    t.linkedRisks.forEach(r => { if (sevScore(r.severity) > sevScore(top.severity)) top = r; });
+    const type = String(top.type || "").toLowerCase();
+    const core = /issue/.test(type) ? "🛠" : /risk/.test(type) ? "⚠" : "•";
+    const sev = sevScore(top.severity);
+    const sevMark = sev >= 3 ? "🔴" : sev === 2 ? "🟠" : "🟡";
+    return core + sevMark;
+  };
+
+  const todayX = toX(new Date().toISOString().slice(0, 10));
+
+  const months = [];
+  const cur = new Date(minDate);
+  while (cur < maxDate) {
+    months.push({
+      x: toX(cur.toISOString().slice(0, 10)),
+      lbl: cur.toLocaleDateString("en-US", { month: "short", year: "2-digit" })
+    });
+    cur.setMonth(cur.getMonth() + 1);
+  }
+
+  const svg = [];
+  svg.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + svgW + '" height="' + svgH + '" style="display:block;min-width:' + svgW + 'px">');
+  svg.push('<rect width="' + svgW + '" height="' + svgH + '" fill="#ffffff"/>');
+  svg.push('<rect width="' + svgW + '" height="' + HDR_H + '" fill="#f8fafc"/>');
+
+  months.forEach(m => {
+    svg.push('<line x1="' + m.x + '" y1="0" x2="' + m.x + '" y2="' + svgH + '" stroke="#e2e8f0" stroke-width="1"/>');
+    svg.push('<text x="' + (m.x + 4) + '" y="15" fill="#475569" font-size="10" font-family="sans-serif">' + m.lbl + '</text>');
+  });
+
+  svg.push('<line x1="0" y1="' + HDR_H + '" x2="' + svgW + '" y2="' + HDR_H + '" stroke="#cbd5e1"/>');
+
+  if (todayX != null) {
+    svg.push('<line x1="' + todayX + '" y1="' + HDR_H + '" x2="' + todayX + '" y2="' + svgH + '" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>');
+    svg.push('<text x="' + (todayX + 3) + '" y="' + (HDR_H - 6) + '" fill="#dc2626" font-size="9" font-family="sans-serif">Today</text>');
+  }
+
+  const nameRows = [];
+
+  if (hasMilestoneLane) {
+    const laneY = HDR_H;
+    const laneMidY = laneY + ROW_H / 2;
+
+    svg.push('<rect x="0" y="' + laneY + '" width="' + svgW + '" height="' + ROW_H + '" fill="#f0fdf4"/>');
+    svg.push('<line x1="0" y1="' + (laneY + ROW_H) + '" x2="' + svgW + '" y2="' + (laneY + ROW_H) + '" stroke="#bbf7d0"/>');
+    nameRows.push('<div style="height:' + ROW_H + 'px;line-height:' + ROW_H + 'px;padding:0 8px;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#f0fdf4;color:#166534;border-bottom:1px solid #bbf7d0" title="Milestones lane">🏁 Milestones</div>');
+
+    milestones.forEach((m, idx) => {
+      const mx = toX(m.finish) || toX(m.start);
+      if (mx == null) return;
+      const rowOffset = idx % 2 === 0 ? -8 : 8;
+      const my = laneMidY + rowOffset;
+      const d = 7;
+      const mc = m.isSlipped ? "#ef4444" : "#16a34a";
+      const ms = m.isSlipped ? "#991b1b" : "#14532d";
+
+      const mTip = [
+        "#" + (m.uid || "?") + " " + m.name,
+        "Milestone · " + m.workstream,
+        "Date: " + fmt(m.finish || m.start),
+        m.slipDays ? ("⚠ Slipped +" + m.slipDays + " days") : ""
+      ].filter(Boolean).join("\\n").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+      svg.push('<polygon points="' + mx + ',' + (my - d) + ' ' + (mx + d) + ',' + my + ' ' + mx + ',' + (my + d) + ' ' + (mx - d) + ',' + my + '" fill="' + mc + '" stroke="' + ms + '" stroke-width="1.2"><title>' + mTip + '</title></polygon>');
+      svg.push('<text x="' + (mx + d + 4) + '" y="' + (my + 3) + '" fill="' + mc + '" font-size="9" font-family="sans-serif" font-weight="600">' + esc(trunc(m.name, 18)) + '</text>');
+    });
+  }
+
+  tasks.forEach((t, i) => {
+    const rowIndex = i + extraRows;
+    const y = HDR_H + rowIndex * ROW_H;
+    const rowBg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+
+    svg.push('<rect x="0" y="' + y + '" width="' + svgW + '" height="' + ROW_H + '" fill="' + rowBg + '"/>');
+    svg.push('<line x1="0" y1="' + (y + ROW_H) + '" x2="' + svgW + '" y2="' + (y + ROW_H) + '" stroke="#e2e8f0"/>');
+
+    const x1 = toX(t.start);
+    const x2 = toX(t.finish);
+    const xBL = t.baselineFinish ? toX(t.baselineFinish) : null;
+
+    const shownPred = (t.predIds || []).filter(id => visibleIds.has(id)).length;
+    const shownSuc = (t.sucIds || []).filter(id => visibleIds.has(id)).length;
+
+    const tip = [
+      "#" + (t.uid || "?") + " " + t.name,
+      "Workstream: " + t.workstream,
+      "Start: " + fmt(t.start) + " | Finish: " + fmt(t.finish),
+      t.baselineFinish ? ("Baseline finish: " + fmt(t.baselineFinish)) : "",
+      t.slipDays ? ("⚠ Slipped +" + t.slipDays + " days") : "",
+      (shownPred || shownSuc) ? ("Shown links: ↑" + shownPred + " ↓" + shownSuc) : ""
+    ].filter(Boolean).join("\\n").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    const barColor = t.isSlipped ? "#ea580c" : t.pct > 0 ? "#2563eb" : "#64748b";
+    const bdrColor = t.isSlipped ? "#c2410c" : t.pct > 0 ? "#1d4ed8" : "#475569";
+
+    if (x1 != null && x2 != null) {
+      const bw = Math.max(8, x2 - x1);
+      svg.push('<rect x="' + x1 + '" y="' + (y + 8) + '" width="' + bw + '" height="' + (ROW_H - 16) + '" rx="3" fill="' + barColor + '" stroke="' + bdrColor + '" stroke-width="0.8"><title>' + tip + '</title></rect>');
+      if (t.pct > 0 && t.pct < 100) {
+        svg.push('<rect x="' + x1 + '" y="' + (y + 8) + '" width="' + Math.max(4, Math.round(bw * t.pct / 100)) + '" height="' + (ROW_H - 16) + '" rx="3" fill="#60a5fa" opacity="0.9"/>');
       }
-    } else {
-      const mx=x2??x1;
-      if(mx!=null){
-        const d=9, mc=t.isSlipped?"#ef5350":"#22c55e", ms=t.isSlipped?"#7f1d1d":"#14532d";
-        svg.push(\`<polygon points="\${mx},\${my-d} \${mx+d},\${my} \${mx},\${my+d} \${mx-d},\${my}" fill="\${mc}" stroke="\${ms}" stroke-width="1.5"><title>\${tipSvg}</title></polygon>\`);
-        svg.push(\`<text x="\${mx+d+5}" y="\${my+4}" fill="\${mc}" font-size="10" font-family="sans-serif" font-weight="600">\${esc(trunc(t.name,28))}</text>\`);
-        if(xBL&&Math.abs(xBL-mx)>3) svg.push(\`<line x1="\${xBL}" y1="\${my}" x2="\${mx}" y2="\${my}" stroke="#ff9800" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.7"><title>Baseline: \${fmt(t.baselineFinish)}</title></line>\`);
-        if(t.linkedRisks.length>0){
-          const it=t.linkedRisks.map(r=>r.type+": "+r.name+" ["+r.severity+"] — "+r.category).join("; ").replace(/&/g,"&amp;").replace(/</g,"&lt;");
-          svg.push(\`<circle cx="\${mx}" cy="\${my-d-8}" r="6" fill="#ef5350" stroke="#450a0a" stroke-width="1"><title>\${it}</title></circle>\`);
-          svg.push(\`<text x="\${mx}" y="\${my-d-4}" text-anchor="middle" font-size="9" fill="white" font-weight="bold" font-family="sans-serif">!</text>\`);
-        }
+      if (xBL && Math.abs(xBL - x2) > 3) {
+        svg.push('<line x1="' + xBL + '" y1="' + (y + 5) + '" x2="' + xBL + '" y2="' + (y + ROW_H - 5) + '" stroke="#f59e0b" stroke-width="2" opacity="0.85"><title>Baseline: ' + fmt(t.baselineFinish) + '</title></line>');
+      }
+
+      svg.push('<text x="' + (x1 + 2) + '" y="' + (y + 7) + '" fill="#334155" font-size="9" font-family="sans-serif">' + fmt(t.start) + '</text>');
+      svg.push('<text x="' + (x2 + 4) + '" y="' + (y + 20) + '" fill="#334155" font-size="9" font-family="sans-serif">' + fmt(t.finish) + '</text>');
+
+      const icon = riskIcon(t);
+      if (icon) svg.push('<text x="' + (x2 + 4) + '" y="' + (y + 9) + '" fill="#dc2626" font-size="10" font-family="sans-serif" font-weight="700">' + icon + '</text>');
+
+      if (shownPred || shownSuc) {
+        svg.push('<text x="' + (x2 + 4) + '" y="' + (y + ROW_H - 4) + '" fill="#475569" font-size="10" font-family="sans-serif">↑' + shownPred + ' ↓' + shownSuc + '</text>');
       }
     }
 
-    const nc=t.milestone?"#fbbf24":t.isSlipped?"#fca5a5":"#e8eaf6";
-    const ic=t.milestone?"🔷":t.linkedRisks.length>0?"⚠":"·";
-    nameRows.push(\`<div style="height:\${ROW_H}px;line-height:\${ROW_H}px;padding:0 8px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:\${rowBg};color:\${nc};border-bottom:1px solid #2e3350" title="\${esc(t.name)} — \${esc(t.workstream)}">\${ic} \${esc(trunc(t.name,24))}</div>\`);
+    const nc = t.isSlipped ? "#9a3412" : "#0f172a";
+    const lead = t.linkedRisks.length > 0 ? "⚠" : "•";
+    nameRows.push('<div style="height:' + ROW_H + 'px;line-height:' + ROW_H + 'px;padding:0 8px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:' + rowBg + ';color:' + nc + ';border-bottom:1px solid #e2e8f0" title="' + esc(t.name) + ' — ' + esc(t.workstream) + '">' + lead + ' ' + esc(trunc(t.name, 26)) + '</div>');
   });
+
   svg.push("</svg>");
 
   document.getElementById("ganttNames").innerHTML = nameRows.join("");
   document.getElementById("ganttSvgWrap").innerHTML = svg.join("");
 
-  // Sync vertical scroll
-  const cw=document.getElementById("ganttChartWrap"), nl=document.getElementById("ganttNames");
-  cw.onscroll=()=>{ nl.scrollTop=cw.scrollTop; };
-  nl.onscroll=()=>{ cw.scrollTop=nl.scrollTop; };
+  const cw = document.getElementById("ganttChartWrap");
+  const nl = document.getElementById("ganttNames");
+  cw.onscroll = () => { nl.scrollTop = cw.scrollTop; };
+  nl.onscroll = () => { cw.scrollTop = nl.scrollTop; };
 
-  // Styled tooltip
-  const tip2=document.getElementById("ganttTip");
-  const svgEl=document.getElementById("ganttSvgWrap").querySelector("svg");
-  if(svgEl){
-    svgEl.addEventListener("mousemove",e=>{
-      const el=e.target.closest("[title]");
-      if(el&&el.getAttribute("title")){
-        tip2.style.display="block";
-        tip2.style.left=(e.clientX+14)+"px";
-        tip2.style.top=(e.clientY-10)+"px";
-        tip2.innerHTML=el.getAttribute("title").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/\\n/g,"<br>").replace(/⚑/g,"<span style='color:#ef5350'>⚑</span>").replace(/⚠/g,"<span style='color:#f59e0b'>⚠</span>");
-      } else { tip2.style.display="none"; }
+  const tip2 = document.getElementById("ganttTip");
+  const svgEl = document.getElementById("ganttSvgWrap").querySelector("svg");
+  if (svgEl) {
+    svgEl.addEventListener("mousemove", e => {
+      const el = e.target.closest("[title]");
+      if (el && el.getAttribute("title")) {
+        tip2.style.display = "block";
+        tip2.style.left = (e.clientX + 14) + "px";
+        tip2.style.top = (e.clientY - 10) + "px";
+        tip2.innerHTML = el.getAttribute("title")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/\\n/g, "<br>")
+          .replace(/⚑/g, "<span style='color:#dc2626'>⚑</span>")
+          .replace(/⚠/g, "<span style='color:#b45309'>⚠</span>");
+      } else {
+        tip2.style.display = "none";
+      }
     });
-    svgEl.addEventListener("mouseleave",()=>{ tip2.style.display="none"; });
+    svgEl.addEventListener("mouseleave", () => { tip2.style.display = "none"; });
   }
 
-  // Scroll to today
-  setTimeout(()=>{
-    const cw2=document.getElementById("ganttChartWrap"); if(!cw2) return;
-    const line=cw2.querySelector("line[stroke='#ef5350']");
-    if(line){ const x=parseFloat(line.getAttribute("x1")||0); cw2.scrollLeft=Math.max(0,x-300); }
-  },80);
+  setTimeout(() => {
+    const cw2 = document.getElementById("ganttChartWrap");
+    if (!cw2) return;
+    const line = cw2.querySelector("line[stroke='#dc2626']");
+    if (line) {
+      const x = parseFloat(line.getAttribute("x1") || 0);
+      cw2.scrollLeft = Math.max(0, x - 320);
+    }
+  }, 80);
 }
 
 init();
