@@ -14,6 +14,7 @@ const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const TASKS_DB_ID = process.env.NOTION_TASKS_DB_ID;
 const RISKS_DB_ID = process.env.NOTION_RISKS_DB_ID || "357ae9be-8a60-8190-b720-c130c7104cf1";
 const OUT_FILE = path.join(__dirname, "..", "dashboard.html");
+const STAGING_DIR = path.join(__dirname, "..", "imports", "staging");
 
 function text(parts) { return (parts || []).map(p => p.plain_text).join(""); }
 function titleProp(p) { return p?.type === "title" ? text(p.title || []) : ""; }
@@ -86,6 +87,371 @@ function relCountByNames(props, names) {
   return 0;
 }
 
+function parseNumberLoose(v) {
+  if (v == null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  const s = String(v).trim();
+  if (!s) return null;
+  const cleaned = s.replace(/,/g, "");
+  const m = cleaned.match(/-?\d+(?:\.\d+)?/);
+  if (!m) return null;
+  const n = Number(m[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseMsProjectDays(v) {
+  const n = parseNumberLoose(v);
+  if (n == null) return null;
+  return n;
+}
+
+function boolFromProp(p) {
+  if (!p) return null;
+  if (p.type === "checkbox") return !!p.checkbox;
+  const s = textLike(p).trim().toLowerCase();
+  if (!s) return null;
+  if (["yes", "y", "true", "1", "critical"].includes(s)) return true;
+  if (["no", "n", "false", "0", "non-critical", "non critical"].includes(s)) return false;
+  return null;
+}
+
+function computeCpmMetrics(tasks, taskById) {
+  let criticalPathCount = 0;
+  let nearCriticalCount = 0;
+  let drivingTaskCount = 0;
+  let overlapEdgeCount = 0;
+  let overlapTaskCount = 0;
+
+  for (const task of tasks) {
+    const finishMs = task.finish ? new Date(task.finish).getTime() : null;
+    const startMs = task.start ? new Date(task.start).getTime() : null;
+
+    let minGapDays = null;
+    let drivingSuccessorCount = 0;
+    let overlapDays = 0;
+    let overlapLinks = 0;
+
+    for (const sid of task.sucIds || []) {
+      const succ = taskById.get(sid);
+      if (!succ || !finishMs || !succ.start) continue;
+      const succStartMs = new Date(succ.start).getTime();
+      if (!Number.isFinite(succStartMs)) continue;
+      const gapDays = (succStartMs - finishMs) / 86400000;
+      if (minGapDays == null || gapDays < minGapDays) minGapDays = gapDays;
+      if (gapDays <= 1) drivingSuccessorCount += 1;
+      if (gapDays < 0) {
+        overlapLinks += 1;
+        overlapDays += Math.abs(gapDays);
+      }
+    }
+
+    let latePredCount = 0;
+    for (const pid of task.predIds || []) {
+      const pred = taskById.get(pid);
+      if (!pred || !startMs || !pred.finish) continue;
+      const predFinishMs = new Date(pred.finish).getTime();
+      if (!Number.isFinite(predFinishMs)) continue;
+      if (predFinishMs > startMs + 86400000) latePredCount += 1;
+    }
+
+    const totalSlackDays = task.totalSlackDaysRaw;
+    const freeSlackDays = task.freeSlackDaysRaw != null ? task.freeSlackDaysRaw : minGapDays;
+
+    const criticalPath = !!task.criticalRaw || (totalSlackDays != null && totalSlackDays <= 0) ||
+      (freeSlackDays != null && freeSlackDays <= 0 && task.pct < 100);
+    const nearCritical = !criticalPath && totalSlackDays != null && totalSlackDays > 0 && totalSlackDays <= 5;
+
+    const driverScore =
+      (task.sucCount || 0) * 2 +
+      drivingSuccessorCount * 4 +
+      (criticalPath ? 12 : nearCritical ? 6 : 0) +
+      (task.isSlipped ? 8 : 0) +
+      (overlapLinks > 0 ? 5 : 0);
+
+    task.cpm = {
+      criticalPath,
+      nearCritical,
+      totalSlackDays,
+      freeSlackDays,
+      drivingSuccessorCount,
+      overlapLinks,
+      overlapDays: Number(overlapDays.toFixed(1)),
+      latePredCount,
+      driverScore
+    };
+
+    if (criticalPath) criticalPathCount += 1;
+    if (nearCritical) nearCriticalCount += 1;
+    if (drivingSuccessorCount > 0) drivingTaskCount += 1;
+    if (overlapLinks > 0) {
+      overlapTaskCount += 1;
+      overlapEdgeCount += overlapLinks;
+    }
+  }
+
+  return {
+    criticalPathCount,
+    nearCriticalCount,
+    drivingTaskCount,
+    overlapTaskCount,
+    overlapEdgeCount
+  };
+}
+
+function normalizeHierarchy(tasks) {
+  const byUid = new Map(tasks.filter(t => t.uid != null).map(t => [t.uid, t]));
+  const byOutline = new Map();
+  for (const t of tasks) {
+    const k = t.outlineNumber || t.wbs || "";
+    if (k) byOutline.set(k, t.uid);
+  }
+
+  for (const t of tasks) {
+    if (t.parentUid == null && t.outlineNumber && t.outlineNumber.includes(".")) {
+      const parts = t.outlineNumber.split(".").filter(Boolean);
+      if (parts.length > 1) {
+        const parentKey = parts.slice(0, -1).join(".");
+        const inferred = byOutline.get(parentKey);
+        if (inferred != null) t.parentUid = inferred;
+      }
+    }
+  }
+
+  for (const t of tasks) t.childUids = [];
+  for (const t of tasks) {
+    if (t.parentUid != null) {
+      const p = byUid.get(t.parentUid);
+      if (p) p.childUids.push(t.uid);
+    }
+  }
+
+  for (const t of tasks) {
+    t.isSummary = !!t.summaryRaw || (t.childUids && t.childUids.length > 0);
+  }
+
+  return { byUid };
+}
+
+function findSummaryAnchor(task, byUid) {
+  if (!task) return null;
+  let cur = task;
+  let chosen = task;
+  let guard = 0;
+  while (cur && guard < 20) {
+    guard += 1;
+    if (cur.isSummary && (cur.outlineLevel == null || cur.outlineLevel <= 4)) {
+      chosen = cur;
+    }
+    if (cur.parentUid == null) break;
+    const p = byUid.get(cur.parentUid);
+    if (!p || p.uid === cur.uid) break;
+    cur = p;
+  }
+  return chosen;
+}
+
+function rangesOverlap(startA, finishA, startB, finishB) {
+  if (!startA || !finishA || !startB || !finishB) return false;
+  const a1 = new Date(startA).getTime();
+  const a2 = new Date(finishA).getTime();
+  const b1 = new Date(startB).getTime();
+  const b2 = new Date(finishB).getTime();
+  if (![a1, a2, b1, b2].every(Number.isFinite)) return false;
+  return a1 <= b2 && b1 <= a2;
+}
+
+function computeResourceCollisionByTask(tasks) {
+  const byOwner = new Map();
+  for (const t of tasks) {
+    const owner = (t.assignedTo || "").trim();
+    if (!owner || /^unassigned$/i.test(owner)) continue;
+    if (!byOwner.has(owner)) byOwner.set(owner, []);
+    byOwner.get(owner).push(t);
+  }
+
+  const collisionMap = new Map();
+  for (const [owner, ownerTasks] of byOwner.entries()) {
+    const focus = ownerTasks.filter(t => t.pct < 100 && (t.cpm?.criticalPath || t.cpm?.nearCritical || t.isDue14 || t.isSlipped));
+    for (let i = 0; i < focus.length; i += 1) {
+      for (let j = i + 1; j < focus.length; j += 1) {
+        const a = focus[i];
+        const b = focus[j];
+        if (!rangesOverlap(a.start || a.finish, a.finish || a.start, b.start || b.finish, b.finish || b.start)) continue;
+        for (const t of [a, b]) {
+          const prev = collisionMap.get(t.id) || { owner, count: 0, peers: new Set() };
+          prev.count += 1;
+          prev.peers.add(t.id === a.id ? b.name : a.name);
+          collisionMap.set(t.id, prev);
+        }
+      }
+    }
+  }
+
+  return collisionMap;
+}
+
+function buildImpactChain(primaryTask, taskById) {
+  if (!primaryTask) return { chain: "", impactedTesting: false, impactedLoads: false };
+  const queue = [{ id: primaryTask.id, depth: 0 }];
+  const seen = new Set([primaryTask.id]);
+  const hits = [];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (!cur || cur.depth >= 3) continue;
+    const t = taskById.get(cur.id);
+    if (!t) continue;
+    for (const sid of t.sucIds || []) {
+      if (seen.has(sid)) continue;
+      seen.add(sid);
+      const s = taskById.get(sid);
+      if (!s) continue;
+      hits.push(s);
+      queue.push({ id: sid, depth: cur.depth + 1 });
+    }
+  }
+
+  const hasTesting = hits.some(t => /\b(itc|uat|test|testing|validation)\b/i.test(t.name || ""));
+  const hasLoads = hits.some(t => /\b(load|data load|staged|simulate load)\b/i.test(t.name || ""));
+  const firstLoad = hits.find(t => /\b(load|data load|staged|simulate load)\b/i.test(t.name || ""));
+  const firstTest = hits.find(t => /\b(itc|uat|test|testing|validation)\b/i.test(t.name || ""));
+  const chainParts = [primaryTask.name];
+  if (firstLoad) chainParts.push(firstLoad.name);
+  if (firstTest && (!firstLoad || firstTest.id !== firstLoad.id)) chainParts.push(firstTest.name);
+
+  return {
+    chain: chainParts.filter(Boolean).join(" → "),
+    impactedTesting: hasTesting,
+    impactedLoads: hasLoads
+  };
+}
+
+function normalizeIsoDate(d) {
+  if (!d) return null;
+  const dt = new Date(d);
+  if (!Number.isFinite(dt.getTime())) return null;
+  return dt.toISOString().slice(0, 10);
+}
+
+function assessScheduleQuality(tasks, taskById) {
+  const now = Date.now();
+  const isSummaryLike = (t) => !!(t?.isSummary || (t?.childUids || []).length > 0);
+
+  for (const t of tasks) {
+    const tags = [];
+    let score = 0;
+
+    let badPredLinks = 0;
+    for (const pid of t.predIds || []) {
+      const p = taskById.get(pid);
+      if (!p || !(p.sucIds || []).includes(t.id)) badPredLinks += 1;
+    }
+    if (badPredLinks > 0) {
+      tags.push("Wrong Dependency");
+      score += 3;
+    }
+
+    let badSucLinks = 0;
+    for (const sid of t.sucIds || []) {
+      const s = taskById.get(sid);
+      if (!s || !(s.predIds || []).includes(t.id)) badSucLinks += 1;
+    }
+    if (badSucLinks > 0) {
+      tags.push("Wrong Successor");
+      score += 3;
+    }
+
+    const startMs = t.start ? new Date(t.start).getTime() : null;
+    const finishMs = t.finish ? new Date(t.finish).getTime() : null;
+    if (startMs && finishMs && startMs > finishMs) {
+      tags.push("Date Incorrect");
+      score += 5;
+    }
+    if (t.pct >= 100 && finishMs && finishMs > now + 14 * 86400000) {
+      tags.push("Date Incorrect");
+      score += 2;
+    }
+
+    const ct = String(t.constraintType || "").toLowerCase();
+    const cDate = normalizeIsoDate(t.constraintDate);
+    const sDate = normalizeIsoDate(t.start);
+    const fDate = normalizeIsoDate(t.finish);
+    let constraintIssue = false;
+    const isHardConstraint = /(must start on|must finish on|start no later than|finish no later than|start no earlier than|finish no earlier than)/i.test(ct);
+    if (ct && isHardConstraint) {
+      if (/must start on/.test(ct) && cDate && sDate && cDate !== sDate) constraintIssue = true;
+      if (/must finish on/.test(ct) && cDate && fDate && cDate !== fDate) constraintIssue = true;
+      if (/start no later than/.test(ct) && cDate && sDate && sDate > cDate) constraintIssue = true;
+      if (/start no earlier than/.test(ct) && cDate && sDate && sDate < cDate) constraintIssue = true;
+      if (/finish no later than/.test(ct) && cDate && fDate && fDate > cDate) constraintIssue = true;
+      if (/finish no earlier than/.test(ct) && cDate && fDate && fDate < cDate) constraintIssue = true;
+    }
+    if (constraintIssue) {
+      tags.push("Constraint Causes Issue");
+      score += 4;
+    }
+
+    if ((t.cpm?.totalSlackDays ?? null) != null && t.cpm.totalSlackDays < 0) {
+      tags.push("Negative Float");
+      score += 2;
+    }
+    if (!isSummaryLike(t) && (t.predCount || 0) === 0 && t.pct < 100) {
+      tags.push("Open Start");
+      score += 1;
+    }
+    if (!isSummaryLike(t) && !t.milestone && (t.sucCount || 0) === 0 && t.pct < 100) {
+      tags.push("Open Finish");
+      score += 1;
+    }
+    if (t.pct > 0 && t.pct < 100 && finishMs && finishMs < now) {
+      tags.push("Out Of Sequence Risk");
+      score += 2;
+    }
+
+    const uniqueTags = [...new Set(tags)];
+    const negFloat = t.cpm?.totalSlackDays ?? null;
+    const hasHardIntegrityBreak =
+      uniqueTags.includes("Date Incorrect") ||
+      uniqueTags.includes("Constraint Causes Issue") ||
+      (uniqueTags.includes("Wrong Dependency") && uniqueTags.includes("Wrong Successor"));
+
+    // MSP-style governance severity bands
+    // Critical: hard integrity problems, severe negative float, or heavy multi-fault stacks
+    // High: one major logic fault + pressure indicators
+    // Medium: quality debt that can become schedule risk if untreated
+    let severity = "Low";
+    if (
+      hasHardIntegrityBreak ||
+      (negFloat != null && negFloat <= -10) ||
+      score >= 9
+    ) {
+      severity = "Critical";
+    } else if (
+      uniqueTags.includes("Wrong Dependency") ||
+      uniqueTags.includes("Wrong Successor") ||
+      (negFloat != null && negFloat < 0) ||
+      (score >= 6)
+    ) {
+      severity = "High";
+    } else if (
+      uniqueTags.includes("Open Start") ||
+      uniqueTags.includes("Open Finish") ||
+      uniqueTags.includes("Out Of Sequence Risk") ||
+      score >= 3
+    ) {
+      severity = "Medium";
+    }
+
+    t.scheduleQuality = {
+      tags: uniqueTags,
+      severity,
+      score,
+      badPredLinks,
+      badSucLinks,
+      hardConstraint: isHardConstraint
+    };
+  }
+}
+
 function simpleSentence(s) {
   return String(s || "")
     .replace(/\s+/g, " ")
@@ -145,6 +511,9 @@ function rankLinkedTask(t) {
   if ((t.sucCount || 0) > 0) score += 8;
   if ((t.predCount || 0) > 0) score += 5;
   if (t.milestone) score += 6;
+  if (t.cpm?.criticalPath) score += 16;
+  else if (t.cpm?.nearCritical) score += 8;
+  score += Math.min(12, t.cpm?.driverScore || 0);
   score += Math.min(10, t.slipDays || 0);
   return score;
 }
@@ -263,6 +632,9 @@ function inferLinkedTasksFromText(rec, tasks, workstreamHints) {
     if (keyTaskRegex.test(t.name || "")) score += 12;
     if ((t.sucCount || 0) > 0) score += 6;
     if ((t.predCount || 0) > 0) score += 4;
+    if (t.cpm?.criticalPath) score += 14;
+    else if (t.cpm?.nearCritical) score += 7;
+    if ((t.cpm?.overlapLinks || 0) > 0) score += 5;
     score += Math.min(10, t.slipDays || 0);
     return { t, score };
   }).sort((a, b) => b.score - a.score || (b.t.slipDays || 0) - (a.t.slipDays || 0));
@@ -286,6 +658,18 @@ async function fetchAll(dbId, label) {
   } while (cursor);
   console.log(`${label}: ${out.length} rows`);
   return out;
+}
+
+function getLatestStagingCsvName() {
+  if (!fs.existsSync(STAGING_DIR)) return null;
+  const files = fs.readdirSync(STAGING_DIR)
+    .filter(n => n.toLowerCase().endsWith(".csv"))
+    .map(n => ({
+      name: n,
+      mtime: fs.statSync(path.join(STAGING_DIR, n)).mtimeMs
+    }))
+    .sort((a, b) => b.mtime - a.mtime);
+  return files[0]?.name || null;
 }
 
 async function main() {
@@ -342,12 +726,16 @@ async function main() {
   let totalOpen = 0, totalDone = 0, slippedOpen = 0, overdueStarts = 0, due14Count = 0;
   const workstreamPressure = new Map();
   const statusCounts = new Map();
+  const isClosedStatus = (status) => /\b(closed|resolved|done|complete|completed|cancelled|canceled)\b/i.test(String(status || ""));
 
   for (const t of rawTasks) {
     const p = t.properties || {};
     const uid = numVal(p["Unique ID"]);
     const name = titleProp(p["Task Name"]) || "(Untitled)";
     const workstream = rich(p.Workstream).trim() || "(Unassigned)";
+    const outlineNumber = textLike(p["Outline Number"]) || "";
+    const wbs = textLike(p["WBS"]) || "";
+    const summaryRaw = boolFromProp(p.Summary);
     const start = dateVal(p.Start);
     const finish = dateVal(p.Finish);
     const baselineFinish = dateVal(p["Baseline Finish"]) || dateVal(p["Baseline10 Finish"]);
@@ -359,6 +747,15 @@ async function main() {
     const sucCount = relCountByNames(p, ["Successor Tasks", "Successors"]);
     const predIds = [...relIds(p["Predecessor Tasks"]), ...relIds(p.Predecessors)];
     const sucIds = [...relIds(p["Successor Tasks"]), ...relIds(p.Successors)];
+    const totalSlackDaysRaw = parseMsProjectDays(textLike(p["Total Slack"]));
+    const freeSlackDaysRaw = parseMsProjectDays(textLike(p["Free Slack"]));
+    const criticalRaw = boolFromProp(p.Critical);
+    const constraintType = textLike(p["Constraint Type"]);
+    const constraintDate = dateVal(p["Constraint Date"]);
+    const taskMode = textLike(p["Task Mode"]);
+    const mspSourceFile = textLike(p["MSP Source File"]);
+    const mspImportVersion = textLike(p["MSP Import Version"]);
+    const mspImportedAt = textLike(p["MSP Imported At"]);
     const resourceNames = splitNames(rich(p["Resource Names"]));
     const businessOwners = splitNames(rich(p["Business Validation Owner"]));
     const assignedTo = resourceNames.length ? resourceNames[0] : (businessOwners[0] || "Unassigned");
@@ -366,7 +763,7 @@ async function main() {
     const statusRaw = selVal(p["Status Update"]) || selVal(p.Status) || (pct >= 100 ? "Done" : "Not started");
     statusCounts.set(statusRaw, (statusCounts.get(statusRaw) || 0) + 1);
 
-    const isOpen = pct < 100;
+    const isOpen = pct < 100 && !isClosedStatus(statusRaw);
     if (isOpen) totalOpen++; else totalDone++;
 
     const slipDays = daysDiff(finish, baselineFinish);
@@ -389,6 +786,9 @@ async function main() {
       uid,
       name,
       workstream,
+      outlineNumber,
+      wbs,
+      summaryRaw,
       start,
       finish,
       baselineFinish,
@@ -400,6 +800,15 @@ async function main() {
       sucCount,
       predIds,
       sucIds,
+      totalSlackDaysRaw,
+      freeSlackDaysRaw,
+      criticalRaw,
+      constraintType,
+      constraintDate,
+      taskMode,
+      mspSourceFile,
+      mspImportVersion,
+      mspImportedAt,
       assignedTo,
       slipDays: isSlipped ? slipDays : null,
       isSlipped,
@@ -410,7 +819,62 @@ async function main() {
     });
   }
 
-  const total = tasks.length;
+  const totalImported = tasks.length;
+  const hierarchy = normalizeHierarchy(tasks);
+  const taskById = new Map(tasks.map(t => [t.id, t]));
+  const collisionByTask = computeResourceCollisionByTask(tasks);
+  computeCpmMetrics(tasks, taskById);
+  assessScheduleQuality(tasks, taskById);
+  const isWorkTask = (t) => !t.isSummary && !t.milestone;
+  const isClosedTask = (t) => (t.pct >= 100) || isClosedStatus(t.status);
+
+  // KPI scope: only executable, open work tasks (exclude closed, summary/parent, milestone)
+  const kpiScopeTasks = tasks.filter(t => isWorkTask(t) && !isClosedTask(t));
+  totalOpen = kpiScopeTasks.length;
+  totalDone = tasks.filter(t => isWorkTask(t) && isClosedTask(t)).length;
+  slippedOpen = kpiScopeTasks.filter(t => t.isSlipped).length;
+  overdueStarts = kpiScopeTasks.filter(t => t.isOverdueStart).length;
+  due14Count = kpiScopeTasks.filter(t => t.isDue14).length;
+
+  workstreamPressure.clear();
+  for (const t of kpiScopeTasks) {
+    if (t.isSlipped) {
+      const ws = t.workstream || "(Unassigned)";
+      workstreamPressure.set(ws, (workstreamPressure.get(ws) || 0) + 1);
+    }
+  }
+
+  const cpmSummary = {
+    criticalPathCount: kpiScopeTasks.filter(t => !!t.cpm?.criticalPath).length,
+    nearCriticalCount: kpiScopeTasks.filter(t => !!t.cpm?.nearCritical).length,
+    drivingTaskCount: kpiScopeTasks.filter(t => (t.cpm?.drivingSuccessorCount || 0) > 0).length,
+    overlapTaskCount: kpiScopeTasks.filter(t => (t.cpm?.overlapLinks || 0) > 0).length,
+    overlapEdgeCount: kpiScopeTasks.reduce((sum, t) => sum + (t.cpm?.overlapLinks || 0), 0)
+  };
+
+  const workTaskCount = tasks.filter(t => isWorkTask(t)).length;
+  const openWorkTaskCount = tasks.filter(t => isWorkTask(t) && !isClosedTask(t)).length;
+  const closedWorkTaskCount = workTaskCount - openWorkTaskCount;
+
+  const sourceFileCounts = new Map();
+  const importVersionCounts = new Map();
+  for (const t of tasks) {
+    if (t.mspSourceFile) sourceFileCounts.set(t.mspSourceFile, (sourceFileCounts.get(t.mspSourceFile) || 0) + 1);
+    if (t.mspImportVersion) importVersionCounts.set(t.mspImportVersion, (importVersionCounts.get(t.mspImportVersion) || 0) + 1);
+  }
+  const primarySourceFile = [...sourceFileCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  const primaryImportVersion = [...importVersionCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  const latestStagingCsv = getLatestStagingCsvName();
+  const provenance = {
+    latestStagingCsv,
+    primarySourceFile,
+    primaryImportVersion,
+    distinctSourceFiles: sourceFileCounts.size,
+    distinctImportVersions: importVersionCounts.size,
+    sourceAlignedToLatestStaging: !!latestStagingCsv && !!primarySourceFile && latestStagingCsv === primarySourceFile,
+    note: "Dashboard logic runs on task records in Notion; these should be imported from staging raw CSV before generation."
+  };
+
   const slipRatePct = totalOpen ? ((slippedOpen / totalOpen) * 100).toFixed(1) : "0.0";
   const openIssues = riskRecords.filter(r => /issue/i.test(r.type));
   const openRisks = riskRecords.filter(r => !/issue/i.test(r.type));
@@ -427,7 +891,6 @@ async function main() {
   const healthAmber = slippedOpen >= 700 || parseFloat(slipRatePct) >= 50 || due14Count >= 60 || overdueStarts >= 40;
   const healthLabel = healthRed ? "🔴 Red" : healthAmber ? "🟠 Amber" : "🟢 Green";
 
-  const taskById = new Map(tasks.map(t => [t.id, t]));
   const workstreamHints = [...new Set(tasks.map(t => t.workstream).filter(Boolean))]
     .flatMap(ws => String(ws).split(/[;|,/]/).map(x => x.trim()).filter(Boolean))
     .filter(ws => ws.length <= 20);
@@ -457,16 +920,33 @@ async function main() {
         plainImpact,
         actions,
         workstream: primaryTask?.workstream || "(Unassigned)",
-        owner: primaryTask?.assignedTo || "Unassigned",
+        owner: primaryTask && !(primaryTask.milestone || primaryTask.isSummary)
+          ? (primaryTask.assignedTo || "Unassigned")
+          : "Unassigned",
         taskId: primaryTask?.id || null,
         taskName: primaryTask?.name || "(No linked task)",
+        summaryName: primaryTask ? (findSummaryAnchor(primaryTask, hierarchy.byUid)?.name || primaryTask.name) : "(No summary)",
         predCount: primaryTask?.predCount || 0,
         sucCount: primaryTask?.sucCount || 0,
+        cpmCritical: !!primaryTask?.cpm?.criticalPath,
+        cpmNearCritical: !!primaryTask?.cpm?.nearCritical,
+        cpmDriverScore: primaryTask?.cpm?.driverScore || 0,
+        cpmFreeSlackDays: primaryTask?.cpm?.freeSlackDays ?? null,
+        cpmTotalSlackDays: primaryTask?.cpm?.totalSlackDays ?? null,
+        cpmOverlapLinks: primaryTask?.cpm?.overlapLinks || 0,
+        scheduleQualityTags: primaryTask?.scheduleQuality?.tags || [],
+        scheduleQualitySeverity: primaryTask?.scheduleQuality?.severity || "Low",
+        scheduleQualityScore: primaryTask?.scheduleQuality?.score || 0,
+        resourceCollisionCount: primaryTask ? (collisionByTask.get(primaryTask.id)?.count || 0) : 0,
+        resourceCollisionPeers: primaryTask ? [...(collisionByTask.get(primaryTask.id)?.peers || [])].slice(0, 5) : [],
         taskStart: primaryTask?.start || null,
         taskFinish: primaryTask?.finish || null,
         milestoneName: impactedMilestone?.name || null,
         milestoneDate: impactedMilestone?.finish || impactedMilestone?.start || null,
         linkageImpact,
+        impactChain: primaryTask ? buildImpactChain(primaryTask, taskById).chain : "",
+        impactedTesting: primaryTask ? buildImpactChain(primaryTask, taskById).impactedTesting : false,
+        impactedLoads: primaryTask ? buildImpactChain(primaryTask, taskById).impactedLoads : false,
         linkedTaskCount: linkedTasks.length,
         milestoneOwners
       };
@@ -474,38 +954,195 @@ async function main() {
     .sort((a, b) => {
       const score = v => {
         const s = String(v.severity || "").toLowerCase();
+        let weight = 0;
         if (/(critical|very high|urgent|severe)/.test(s)) return 4;
-        if (/high/.test(s)) return 3;
-        if (/medium|med/.test(s)) return 2;
-        if (/low/.test(s)) return 1;
-        return 0;
+        if (/high/.test(s)) weight = 3;
+        else if (/medium|med/.test(s)) weight = 2;
+        else if (/low/.test(s)) weight = 1;
+        if (v.cpmCritical) weight += 2;
+        else if (v.cpmNearCritical) weight += 1;
+        if (v.cpmOverlapLinks > 0) weight += 1;
+        if (/critical/i.test(v.scheduleQualitySeverity || "")) weight += 3;
+        else if (/high/i.test(v.scheduleQualitySeverity || "")) weight += 2;
+        else if (/medium/i.test(v.scheduleQualitySeverity || "")) weight += 1;
+        weight += Math.min(2, Math.round((v.cpmDriverScore || 0) / 12));
+        return weight;
       };
       return score(b) - score(a) || b.linkedTaskCount - a.linkedTaskCount;
     });
+
+  const classifyLane = (a) => {
+    const severe = /critical|very high|urgent|severe|high/i.test(String(a.severity || ""));
+    const qualityCritical = /critical/i.test(a.scheduleQualitySeverity || "");
+    const qualityHigh = /high/i.test(a.scheduleQualitySeverity || "");
+    if (
+      a.cpmCritical ||
+      (a.cpmTotalSlackDays != null && a.cpmTotalSlackDays <= 0) ||
+      qualityCritical ||
+      a.resourceCollisionCount >= 2 ||
+      (a.impactedLoads && a.impactedTesting)
+    ) return "Act Now";
+    if (
+      a.cpmNearCritical ||
+      (a.cpmTotalSlackDays != null && a.cpmTotalSlackDays > 0 && a.cpmTotalSlackDays <= 10) ||
+      qualityHigh ||
+      a.resourceCollisionCount >= 1 ||
+      severe
+    ) return "At Risk Soon";
+    return "Watchlist";
+  };
+
+  for (const a of actionItems) {
+    a.attentionLane = classifyLane(a);
+  }
+
+  const riskIssueTable = actionItems.map((a, idx) => ({
+    rank: idx + 1,
+    riskIssueId: a.id,
+    type: a.type,
+    sourceCategory: a.sourceCategory,
+    aiCategory: a.aiCategory,
+    severity: a.severity,
+    status: a.status,
+    workstream: a.workstream,
+    owner: a.owner,
+    taskId: a.taskId,
+    taskName: a.taskName,
+    summaryName: a.summaryName,
+    attentionLane: a.attentionLane,
+    milestoneName: a.milestoneName,
+    milestoneDate: a.milestoneDate,
+    predCount: a.predCount,
+    sucCount: a.sucCount,
+    cpmCritical: a.cpmCritical,
+    cpmNearCritical: a.cpmNearCritical,
+    cpmDriverScore: a.cpmDriverScore,
+    cpmFreeSlackDays: a.cpmFreeSlackDays,
+    cpmTotalSlackDays: a.cpmTotalSlackDays,
+    cpmOverlapLinks: a.cpmOverlapLinks,
+    scheduleQualityTags: (a.scheduleQualityTags || []).join(", "),
+    scheduleQualitySeverity: a.scheduleQualitySeverity,
+    scheduleQualityScore: a.scheduleQualityScore,
+    resourceCollisionCount: a.resourceCollisionCount,
+    resourceCollisionPeers: a.resourceCollisionPeers.join(", "),
+    impactChain: a.impactChain,
+    impactedTesting: a.impactedTesting,
+    impactedLoads: a.impactedLoads,
+    linkedTaskCount: a.linkedTaskCount,
+    issue: a.plainIssue,
+    impact: a.plainImpact,
+    action1: a.actions?.[0] || "",
+    action2: a.actions?.[1] || "",
+    action3: a.actions?.[2] || ""
+  }));
+
+  const attentionBySummaryMap = new Map();
+  for (const row of riskIssueTable) {
+    const key = row.summaryName || row.workstream || "(No summary)";
+    if (!attentionBySummaryMap.has(key)) {
+      attentionBySummaryMap.set(key, {
+        summaryName: key,
+        actNow: 0,
+        atRiskSoon: 0,
+        watchlist: 0,
+        worstSlack: null,
+        maxDriverScore: 0,
+        maxResourceCollision: 0,
+        criticalFindings: 0,
+        highFindings: 0,
+        impactedTestingCount: 0,
+        impactedLoadsCount: 0,
+        examples: [],
+        overallCategory: "Watch"
+      });
+    }
+    const agg = attentionBySummaryMap.get(key);
+    if (row.attentionLane === "Act Now") agg.actNow += 1;
+    else if (row.attentionLane === "At Risk Soon") agg.atRiskSoon += 1;
+    else agg.watchlist += 1;
+    if (row.cpmTotalSlackDays != null) {
+      agg.worstSlack = agg.worstSlack == null ? row.cpmTotalSlackDays : Math.min(agg.worstSlack, row.cpmTotalSlackDays);
+    }
+    agg.maxDriverScore = Math.max(agg.maxDriverScore, row.cpmDriverScore || 0);
+    agg.maxResourceCollision = Math.max(agg.maxResourceCollision, row.resourceCollisionCount || 0);
+    if (/critical/i.test(row.scheduleQualitySeverity || "")) agg.criticalFindings += 1;
+    else if (/high/i.test(row.scheduleQualitySeverity || "")) agg.highFindings += 1;
+    if (row.impactedTesting) agg.impactedTestingCount += 1;
+    if (row.impactedLoads) agg.impactedLoadsCount += 1;
+    if (agg.examples.length < 3 && row.impactChain) agg.examples.push(row.impactChain);
+  }
+
+  for (const agg of attentionBySummaryMap.values()) {
+    if (agg.actNow > 0 || agg.criticalFindings > 0) agg.overallCategory = "Critical";
+    else if (agg.atRiskSoon > 0 || agg.highFindings > 0) agg.overallCategory = "At Risk";
+    else agg.overallCategory = "Watch";
+  }
+
+  const attentionBySummary = [...attentionBySummaryMap.values()].sort((a, b) =>
+    b.actNow - a.actNow || b.atRiskSoon - a.atRiskSoon || a.summaryName.localeCompare(b.summaryName)
+  );
 
   // Split into fast-load (boostrap) and async-load (full) payloads
   // Bootstrap tasks: top 200 at-risk tasks for instant render
   const tasksByRisk = [...tasks]
     .sort((a, b) => {
-      const scoreA = (a.isSlipped ? 40 : 0) + (a.isOverdueStart ? 25 : 0) + (a.isDue14 ? 15 : 0) + (a.linkedRisks?.length || 0) * 10;
-      const scoreB = (b.isSlipped ? 40 : 0) + (b.isOverdueStart ? 25 : 0) + (b.isDue14 ? 15 : 0) + (b.linkedRisks?.length || 0) * 10;
+      const scoreA =
+        (a.isSlipped ? 40 : 0) +
+        (a.isOverdueStart ? 25 : 0) +
+        (a.isDue14 ? 15 : 0) +
+        (a.linkedRisks?.length || 0) * 10 +
+        (a.cpm?.criticalPath ? 20 : a.cpm?.nearCritical ? 10 : 0) +
+        Math.min(12, a.cpm?.driverScore || 0);
+      const scoreB =
+        (b.isSlipped ? 40 : 0) +
+        (b.isOverdueStart ? 25 : 0) +
+        (b.isDue14 ? 15 : 0) +
+        (b.linkedRisks?.length || 0) * 10 +
+        (b.cpm?.criticalPath ? 20 : b.cpm?.nearCritical ? 10 : 0) +
+        Math.min(12, b.cpm?.driverScore || 0);
       return scoreB - scoreA;
     });
   const bootstrapTasks = tasksByRisk.slice(0, 200);
   
   const bootstrapPayload = {
     generatedAt: now.toISOString(),
-    metrics: { total, totalOpen, totalDone, slippedOpen, slipRatePct, overdueStarts, due14: due14Count, openIssues: openIssues.length, openRisks: openRisks.length, healthLabel },
+    metrics: {
+      total: workTaskCount,
+      totalImported,
+      totalOpen: openWorkTaskCount,
+      totalDone: closedWorkTaskCount,
+      slippedOpen,
+      slipRatePct,
+      overdueStarts,
+      due14: due14Count,
+      openIssues: openIssues.length,
+      openRisks: openRisks.length,
+      healthLabel,
+      criticalPathCount: cpmSummary.criticalPathCount,
+      nearCriticalCount: cpmSummary.nearCriticalCount,
+      drivingTaskCount: cpmSummary.drivingTaskCount,
+      overlapTaskCount: cpmSummary.overlapTaskCount,
+      overlapEdgeCount: cpmSummary.overlapEdgeCount,
+      sourceAlignedToLatestStaging: provenance.sourceAlignedToLatestStaging,
+      distinctImportVersions: provenance.distinctImportVersions
+    },
+    provenance,
     riskTypeBreakdown,
     statusBreakdown,
     topWorkstreams,
     riskRecords,
     actionItems,
+    riskIssueTable,
+    attentionBySummary,
     tasks: bootstrapTasks
   };
 
   const fullTaskPayload = {
     generatedAt: now.toISOString(),
+    provenance,
+    cpmSummary,
+    riskIssueTable,
+    attentionBySummary,
     tasks
   };
 
@@ -525,7 +1162,10 @@ async function main() {
 }
 
 function buildHtml(bootstrapPayload) {
-  const data = JSON.stringify(bootstrapPayload).replace(/<\/script>/gi, "<\\/script>");
+  const data = JSON.stringify(bootstrapPayload)
+    .replace(/<\/script>/gi, "<\\/script>")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
   const workstreams = [...new Set(bootstrapPayload.tasks.map(t => t.workstream))].sort();
   const wsOptions = workstreams.map(w => `<option value="${w.replace(/"/g,'&quot;')}">${w}</option>`).join('\n          ');
   const riskTypeOptions = bootstrapPayload.riskTypeBreakdown
@@ -551,6 +1191,7 @@ ${plotlyScript}
   .health-badge{padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#fdf0f2;color:#b9384f;border:1px solid #f4c6d0;}
   header .gen{font-size:11px;color:var(--text2);margin-left:auto;}
   .kpi-strip{display:flex;gap:8px;padding:8px 18px;flex-shrink:0;overflow-x:auto;}
+  .new-issue-alert{padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;display:none;}
   .kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 14px;white-space:nowrap;display:flex;align-items:baseline;gap:8px;box-shadow:var(--shadow);}
   .kpi .val{font-size:20px;font-weight:700;line-height:1;}
   .kpi .lbl{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;}
@@ -736,6 +1377,35 @@ ${plotlyScript}
   .action-steps{margin:0;padding-left:16px;font-size:11px;color:#0f172a;line-height:1.45;}
   .action-steps li{margin:0 0 2px 0;}
   .action-impact{font-size:10px;color:var(--text2);padding-top:4px;border-top:1px dashed var(--border);}
+  /* control tower */
+  .control-wrap{display:flex;flex-direction:column;height:100%;gap:10px;min-height:0;}
+  .control-priority-totals{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:8px;margin-bottom:8px;}
+  .control-priority-box{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:7px 10px;display:flex;align-items:center;justify-content:space-between;}
+  .control-priority-box .k{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);font-weight:700;}
+  .control-priority-box .v{font-size:18px;font-weight:700;line-height:1;}
+  .control-priority-box.immediate{background:#fff1f2;border-color:#fecdd3;}
+  .control-priority-box.next{background:#eff6ff;border-color:#bfdbfe;}
+  .control-priority-box.watch{background:#ecfdf5;border-color:#bbf7d0;}
+  .control-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:10px;min-height:0;flex:1;}
+  .control-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:10px;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+  .control-lanes{display:grid;grid-template-columns:repeat(3,minmax(220px,1fr));gap:8px;min-height:220px;}
+  .control-lane{border:1px solid var(--border);border-radius:10px;background:var(--surface2);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+  .control-lane-hd{padding:7px 9px;font-size:11px;font-weight:700;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+  .control-lane-body{padding:8px;display:flex;flex-direction:column;gap:6px;overflow:auto;min-height:0;}
+  .control-ms-group{border:1px solid var(--border);border-radius:8px;background:#f8fafc;overflow:hidden;}
+  .control-ms-group-hd{padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#475569;background:#eef2f7;border-bottom:1px solid var(--border);}
+  .control-ms-group-body{padding:6px;display:flex;flex-direction:column;gap:6px;}
+  .control-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 8px;font-size:11px;line-height:1.35;}
+  .control-card-title{font-weight:700;margin-bottom:4px;}
+  .control-chip{display:inline-block;margin:2px 4px 0 0;padding:1px 7px;border-radius:999px;font-size:10px;border:1px solid var(--border);background:#f8fafc;color:#475569;}
+  .control-table{width:100%;border-collapse:collapse;}
+  .control-table th,.control-table td{font-size:11px;padding:6px 7px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;}
+  .control-table th{position:sticky;top:0;background:var(--surface2);z-index:2;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--text2);}
+  .control-tbl-wrap{overflow:auto;min-height:0;flex:1;border:1px solid var(--border);border-radius:10px;background:var(--surface);}
+  .control-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px;}
+  .control-toolbar select,.control-toolbar button{font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);}
+  .control-gantt{flex:1;min-height:360px;border:1px solid var(--border);border-radius:10px;background:var(--surface);}
+  .prov-footer{position:fixed;right:10px;bottom:6px;font-size:10px;color:#6b7280;opacity:.8;background:rgba(255,255,255,.75);border:1px solid #e5e7eb;border-radius:999px;padding:3px 8px;z-index:9000;backdrop-filter: blur(3px);max-width:58vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   @keyframes spin{to{transform:rotate(360deg)}}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
@@ -758,6 +1428,7 @@ ${plotlyScript}
 <header>
   <h1>📊 Ametek SAP S4 — Schedule Dashboard</h1>
   <span id="healthBadge" class="health-badge">Loading…</span>
+  <span id="newIssueAlert" class="new-issue-alert"></span>
   <span class="gen" id="genTime"></span>
 </header>
 <div class="kpi-strip" id="kpiStrip"></div>
@@ -766,6 +1437,7 @@ ${plotlyScript}
   <button class="tab-btn" id="tabGantt" onclick="switchTab('gantt')">📅 Gantt / Milestones</button>
   <button class="tab-btn" id="tabActions" onclick="switchTab('actions')">🧠 Proposed Actions</button>
   <button class="tab-btn" id="tabBoard" onclick="switchTab('board')">🧩 Dependency Board</button>
+  <button class="tab-btn" id="tabControl" onclick="switchTab('control')">🚦 Schedule Control Tower</button>
   <button class="tab-btn" id="tabPlan" onclick="switchTab('plan')">🗂️ Plan Explorer</button>
 </div>
 
@@ -964,7 +1636,36 @@ ${plotlyScript}
     </div>
   </div>
 </div>
+
+<!-- CONTROL TOWER TAB -->
+<div id="controlContent" style="display:none;flex:1;overflow:hidden;padding:10px 18px 12px;">
+  <div class="control-wrap">
+    <div class="control-panel" style="padding-bottom:8px;">
+      <div class="panel-title" style="margin-bottom:8px;">Immediate attention lanes (working view)</div>
+      <div id="controlPriorityTotals"></div>
+      <div id="controlLanes" class="control-lanes"></div>
+    </div>
+    <div class="control-grid">
+      <div class="control-panel">
+        <div class="panel-title" style="margin-bottom:6px;">Summary rollup (Master Data / Transactional level)</div>
+        <div id="controlSummaryWrap" class="control-tbl-wrap"></div>
+      </div>
+      <div class="control-panel">
+        <div class="panel-title" style="margin-bottom:6px;">L3 milestone quick Gantt (summary + immediate pred/succ + impacted milestone)</div>
+        <div class="control-toolbar">
+          <label style="font-size:11px;color:var(--text2)">Focus level:
+            <select id="controlLevelSelect"><option value="3" selected>L3</option><option value="2">L2</option><option value="4">L4</option></select>
+          </label>
+          <select id="controlActionSelect" style="min-width:260px"></select>
+          <button id="controlRefreshBtn" type="button">Refresh view</button>
+        </div>
+        <div id="controlGantt" class="control-gantt"></div>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="ganttTip"></div>
+<div id="provenanceFooter" class="prov-footer" title="Source lineage"></div>
 
 <script>
 const DATA = ${data};
@@ -973,6 +1674,7 @@ let selectedTaskId = null;
 let ganttRendered = false;
 let planRendered = false;
 let boardRendered = false;
+let controlRendered = false;
 let taskById = new Map();
 let taskByUid = new Map();
 let planState = null;
@@ -1160,7 +1862,7 @@ function renderPlanCalendar() {
       '<span style="display:inline-block;min-width:84px;color:var(--text2)">' + esc(date) + '</span>' +
       '<span style="font-weight:600;color:var(--text)">L' + esc(String(t.outlineLevel || '?')) + '</span> ' + flag + ' ' +
       esc(trunc(t.name, 70)) +
-      '<span style="color:var(--text2)"> — ' + esc(t.assignedTo || 'Unassigned') + '</span>' +
+      '<span style="color:var(--text2)"> — ' + esc(ownerForDisplay(t)) + '</span>' +
       '</div>';
   }).join('');
 }
@@ -1197,7 +1899,7 @@ function renderPlanExplorer() {
         '</div>' +
       '</td>' +
       '<td>' + esc(String(n.outlineLevel || '—')) + '</td>' +
-      '<td>' + esc(trunc(n.assignedTo || 'Unassigned', 22)) + '</td>' +
+      '<td>' + esc(trunc(ownerForDisplay(n.task), 22)) + '</td>' +
       '<td>' + esc(fmt(n.finish)) + '</td>' +
       '<td>' + (ind || '<span style="color:var(--text2)">—</span>') + '</td>' +
       '</tr>';
@@ -1297,7 +1999,7 @@ function renderMilestoneMini() {
         '<span style="font-size:13px">' + icon + '</span>' +
         '<span style="font-size:11px;color:var(--text2);white-space:nowrap;min-width:70px">' + esc(date) + '</span>' +
         '<span style="font-size:12px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(trunc(m.name, 50)) + '</span>' +
-        '<span style="font-size:11px;color:var(--text2);white-space:nowrap">' + esc(trunc(m.assignedTo || 'Unassigned', 18)) + '</span>' +
+        '<span style="font-size:11px;color:var(--text2);white-space:nowrap">' + esc(trunc(ownerForDisplay(m), 18)) + '</span>' +
         '</div>';
     }).join('') +
   '</div>';
@@ -1346,24 +2048,31 @@ function switchTab(tab) {
   const isGantt = tab === "gantt";
   const isActions = tab === "actions";
   const isBoard = tab === "board";
+  const isControl = tab === "control";
   const isPlan = tab === "plan";
-  document.getElementById("tabTasks").classList.toggle("active", !isGantt && !isActions && !isPlan && !isBoard);
+  document.getElementById("tabTasks").classList.toggle("active", !isGantt && !isActions && !isPlan && !isBoard && !isControl);
   document.getElementById("tabGantt").classList.toggle("active", isGantt);
   document.getElementById("tabActions").classList.toggle("active", isActions);
   document.getElementById("tabBoard").classList.toggle("active", isBoard);
+  document.getElementById("tabControl").classList.toggle("active", isControl);
   document.getElementById("tabPlan").classList.toggle("active", isPlan);
   const tc = document.getElementById("tasksContent");
-  tc.style.display = isGantt || isActions || isPlan || isBoard ? "none" : "contents";
+  tc.style.display = isGantt || isActions || isPlan || isBoard || isControl ? "none" : "contents";
   const ac = document.getElementById("actionsContent");
   ac.style.display = isActions ? "flex" : "none";
   const bc = document.getElementById("boardContent");
   bc.style.display = isBoard ? "flex" : "none";
+  const cc = document.getElementById("controlContent");
+  cc.style.display = isControl ? "flex" : "none";
   const gc = document.getElementById("ganttContent");
   gc.style.display = isGantt ? "flex" : "none";
   const pc = document.getElementById("planContent");
   pc.style.display = isPlan ? "flex" : "none";
   if (isGantt && !ganttRendered) {
-    gc.innerHTML = '<div style="padding:24px;color:var(--text2);font-size:13px">⏳ Loading Gantt library…</div>';
+    const ganttPlot = document.getElementById('ganttPlot');
+    if (ganttPlot) {
+      ganttPlot.innerHTML = '<div style="padding:24px;color:var(--text2);font-size:13px">⏳ Loading Gantt library…</div>';
+    }
     ensurePlotly().then(() => { renderGantt(); ganttRendered = true; });
   }
   if (isActions) renderActions();
@@ -1371,6 +2080,12 @@ function switchTab(tab) {
     ensurePlotly().then(() => {
       renderBoardTab();
       boardRendered = true;
+    });
+  }
+  if (isControl && !controlRendered) {
+    ensurePlotly().then(() => {
+      renderControlTab();
+      controlRendered = true;
     });
   }
   if (isPlan && !planRendered) {
@@ -1389,6 +2104,7 @@ function findActionForTask(taskId) {
 
 function taskSignalList(task, driving) {
   if (!task) return [];
+  const cpm = task.cpm || {};
   const now = Date.now();
   const finishMs = task.finish ? new Date(task.finish).getTime() : null;
   const out = [];
@@ -1404,8 +2120,16 @@ function taskSignalList(task, driving) {
   if (task.isDue14) {
     out.push({ cls: 'ok', icon: '⏳', label: 'Due ≤14d', tip: 'Task is due within the next 14 days.' });
   }
+  if (cpm.criticalPath) {
+    out.push({ cls: 'danger', icon: '🎯', label: 'Critical Path', tip: 'Task sits on the computed critical path / zero-slack chain.' });
+  } else if (cpm.nearCritical) {
+    out.push({ cls: 'warn', icon: '🟡', label: 'Near Critical', tip: 'Task has low slack and is close to the critical path.' });
+  }
   if (driving) {
     out.push({ cls: 'warn', icon: '⚡', label: 'Driving', tip: 'This predecessor directly drives the successor with near-zero float.' });
+  }
+  if ((cpm.overlapLinks || 0) > 0) {
+    out.push({ cls: 'warn', icon: '🔀', label: 'Overlap', tip: 'This task has overlapping successor handoffs (negative gap).' });
   }
   if (task.milestone) {
     out.push({ cls: 'info', icon: '🏁', label: 'Milestone', tip: 'Milestone-type schedule node.' });
@@ -1439,7 +2163,7 @@ function renderBoardDepDetail(task) {
     '<div class="board-dep-col">' +
       '<div class="board-dep-hd">Resolution</div>' +
       resolutionHtml +
-      '<div class="board-dep-meta">Owner: ' + esc(action?.owner || task.assignedTo || 'Unassigned') + ' · Milestone: ' + esc(fmt(action?.milestoneDate || task.finish)) + '</div>' +
+      '<div class="board-dep-meta">Owner: ' + esc(action?.owner || ownerForDisplay(task)) + ' · Milestone: ' + esc(fmt(action?.milestoneDate || task.finish)) + '</div>' +
     '</div>';
 }
 
@@ -1552,7 +2276,7 @@ function boardNodeRow(node) {
     .join('');
   const rowTitle = [
     'Task: ' + (node.task.name || '—'),
-    'Owner: ' + (node.task.assignedTo || 'Unassigned'),
+    'Owner: ' + ownerForDisplay(node.task),
     'Start: ' + fmt(node.task.start),
     'Finish: ' + fmt(node.task.finish),
     'Progress: ' + (node.task.pct || 0) + '%',
@@ -1560,14 +2284,15 @@ function boardNodeRow(node) {
   ].join('\\n');
   const drivingCls = driving ? ' driving' : '';
   const activeCls = isSelected ? ' active' : '';
+  const dirGlyph = node.relation === 'pred' ? '↑' : '↓';
   const row = '<div class="board-node branch ' + cls + drivingCls + activeCls + '" style="margin-left:' + pad + 'px">' +
     '<div class="board-node-row">' + btn +
     '<div class="board-node-body" onclick="selectBoardNode(' + node.id + ')" title="' + esc(rowTitle) + '">' +
-    '<div class="board-node-name"><span class="board-dir" title="Dependency flow direction">↓</span>' + esc(trunc(node.task.name, 60)) + '</div>' +
+    '<div class="board-node-name"><span class="board-dir" title="Dependency flow direction">' + dirGlyph + '</span>' + esc(trunc(node.task.name, 60)) + '</div>' +
     '<div class="board-node-meta">' +
       '<span class="board-col" title="Start date">Start: ' + esc(fmt(node.task.start)) + '</span>' +
       '<span class="board-col" title="Finish date">Finish: ' + esc(fmt(node.task.finish)) + '</span>' +
-      '<span class="board-col" title="Assigned owner">Owner: ' + esc(trunc(node.task.assignedTo || 'Unassigned', 20)) + '</span>' +
+      '<span class="board-col" title="Assigned owner">Owner: ' + esc(trunc(ownerForDisplay(node.task), 20)) + '</span>' +
       '<span class="board-col" title="Percent complete">%: ' + esc(String(node.task.pct || 0)) + '</span>' +
       '<span class="board-col" title="Dependency counts">↑' + esc(String(node.task.predCount || 0)) + ' ↓' + esc(String(node.task.sucCount || 0)) + '</span>' +
       '<span class="board-col flags">' + signalBadges + '</span>' +
@@ -1645,10 +2370,10 @@ function renderBoardGantt() {
     return String(a.task.finish || a.task.start).localeCompare(String(b.task.finish || b.task.start));
   });
 
-  const minD = new Date(Math.min(...rows.map(r => new Date(r.task.start || r.task.finish).getTime())));
-  const maxD = new Date(Math.max(...rows.map(r => new Date(r.task.finish || r.task.start).getTime())));
-  minD.setDate(minD.getDate() - 2);
-  maxD.setDate(maxD.getDate() + 10);
+  const minD = new Date();
+  minD.setDate(minD.getDate() - 30);
+  const maxD = new Date();
+  maxD.setDate(maxD.getDate() + 180);
 
   const y = rows.map(r => {
     const indent = '\u00a0'.repeat(Math.min(8, (r.depth || 0) * 3));
@@ -1678,7 +2403,7 @@ function renderBoardGantt() {
       textfont: { color: '#fff', size: 10 },
       hovertemplate: taskRows.map(r => {
         const sig = taskSignalList(r.task, false).map(s => s.icon + ' ' + s.label).join(' · ') || 'None';
-        return '<b>' + esc(r.task.name) + '</b><br>Relation: ' + r.relation + ' · Level ' + (r.depth || 0) + '<br>Type: Task<br>Start: ' + fmt(r.task.start) + '<br>Finish: ' + fmt(r.task.finish) + '<br>% Complete: ' + (r.task.pct || 0) + '<br>Owner: ' + esc(r.task.assignedTo || 'Unassigned') + '<br>Signals: ' + esc(sig) + '<extra></extra>';
+        return '<b>' + esc(r.task.name) + '</b><br>Relation: ' + r.relation + ' · Level ' + (r.depth || 0) + '<br>Type: Task<br>Start: ' + fmt(r.task.start) + '<br>Finish: ' + fmt(r.task.finish) + '<br>% Complete: ' + (r.task.pct || 0) + '<br>Owner: ' + esc(ownerForDisplay(r.task)) + '<br>Signals: ' + esc(sig) + '<extra></extra>';
       }),
       showlegend: false
     });
@@ -1878,26 +2603,22 @@ function renderActions() {
     const t = a.taskId ? taskById.get(a.taskId) : null;
     const milestoneMs = a.milestoneDate ? new Date(a.milestoneDate).getTime() : null;
     const daysToMilestone = milestoneMs ? Math.round((milestoneMs - nowMs) / 86400000) : null;
-    let urgency = 0;
-    if (t?.isSlipped) urgency += 5;
-    if (t?.isOverdueStart) urgency += 3;
-    if (t?.isDue14) urgency += 2;
-    if ((a.predCount || 0) + (a.sucCount || 0) >= 4) urgency += 1;
-    if (daysToMilestone != null && daysToMilestone <= 14) urgency += 2;
-    const lane = urgency >= 6 ? 'immediate' : urgency >= 3 ? 'planned' : 'monitor';
-    return { a, t, urgency, lane, daysToMilestone };
-  }).sort((x, y) => y.urgency - x.urgency);
+    const laneLabel = a.attentionLane || 'Watchlist';
+    const lane = laneLabel === 'Act Now' ? 'actNow' : laneLabel === 'At Risk Soon' ? 'atRiskSoon' : 'watchlist';
+    const urgency = lane === 'actNow' ? 100 : lane === 'atRiskSoon' ? 60 : 30;
+    return { a, t, urgency, lane, laneLabel, daysToMilestone };
+  }).sort((x, y) => y.urgency - x.urgency || (y.a.cpmDriverScore || 0) - (x.a.cpmDriverScore || 0));
 
   const lanes = [
-    { key: 'immediate', label: 'Immediate Resolution', css: 'actions-col-immediate' },
-    { key: 'planned', label: 'Planned Resolution', css: 'actions-col-planned' },
-    { key: 'monitor', label: 'Monitor Queue', css: 'actions-col-monitor' }
+    { key: 'actNow', label: 'Act Now', css: 'actions-col-immediate' },
+    { key: 'atRiskSoon', label: 'At Risk Soon', css: 'actions-col-planned' },
+    { key: 'watchlist', label: 'Watchlist', css: 'actions-col-monitor' }
   ];
 
   if (sub) {
     const totalOpen = scored.length;
-    const immediate = scored.filter(x => x.lane === 'immediate').length;
-    sub.textContent = totalOpen + ' action cards · ' + immediate + ' immediate';
+    const immediate = scored.filter(x => x.lane === 'actNow').length;
+    sub.textContent = totalOpen + ' action cards · ' + immediate + ' require immediate attention';
   }
 
   const issueTypeIcon = (type, category) => {
@@ -1930,14 +2651,24 @@ function renderActions() {
       const dueChip = (daysToMilestone != null)
         ? '<span class="action-chip date">🏁 ' + esc(fmt(a.milestoneDate)) + (daysToMilestone >= 0 ? ' (D-' + daysToMilestone + ')' : ' (late)') + '</span>'
         : '';
-      const ownerChip = '<span class="action-chip owner">👤 ' + esc(a.owner || t?.assignedTo || 'Unassigned') + '</span>';
+      const ownerChip = '<span class="action-chip owner">👤 ' + esc(a.owner || ownerForDisplay(t)) + '</span>';
       const depChip = '<span class="action-chip dep">↑' + esc(String(a.predCount || 0)) + ' ↓' + esc(String(a.sucCount || 0)) + '</span>';
+      const summaryChip = '<span class="action-chip">📦 ' + esc(trunc(a.summaryName || '(No summary)', 24)) + '</span>';
+      const collisionChip = (a.resourceCollisionCount || 0) > 0
+        ? '<span class="action-chip">👥 collision x' + esc(String(a.resourceCollisionCount)) + '</span>'
+        : '';
+      const cpmChip = a.cpmCritical
+        ? '<span class="action-chip">🎯 critical path</span>'
+        : a.cpmNearCritical
+          ? '<span class="action-chip">🟡 near critical</span>'
+          : '';
       return '<article class="action-card">' +
         topMeta +
         '<div class="action-title">' + esc(trunc(a.plainIssue || a.taskName || 'Issue', 110)) + '</div>' +
         '<div class="action-linked">Task with issue: <strong>' + esc(trunc(a.taskName || 'No linked task', 64)) + '</strong> → Immediate higher-level milestone impacted: <strong>' + esc(trunc(impactMilestone, 64)) + '</strong></div>' +
+        (a.impactChain ? '<div class="action-linked">Dependency consequence: <strong>' + esc(trunc(a.impactChain, 90)) + '</strong></div>' : '') +
         '<div class="action-desc">' + esc(trunc(a.plainImpact || a.linkageImpact || 'No impact description available.', 180)) + '</div>' +
-        '<div class="action-chips">' + ownerChip + dueChip + depChip + '</div>' +
+        '<div class="action-chips">' + ownerChip + dueChip + depChip + summaryChip + collisionChip + cpmChip + '</div>' +
         (steps ? '<ul class="action-steps">' + steps + '</ul>' : '') +
         '<div class="action-impact">Resolution focus: ' + esc(trunc(a.linkageImpact || 'Track linkage impact and remove blockers.', 120)) + '</div>' +
       '</article>';
@@ -1947,6 +2678,201 @@ function renderActions() {
       '<div class="actions-col-body">' + cards + '</div>' +
     '</section>';
   }).join('');
+}
+
+function updateNewIssueAlert() {
+  const el = document.getElementById('newIssueAlert');
+  if (!el) return;
+  try {
+    const ids = (DATA.riskIssueTable || []).map(r => String(r.riskIssueId || '')).filter(Boolean);
+    const key = 'ametek_schedule_seen_issue_ids_v1';
+    const raw = localStorage.getItem(key);
+    const prev = raw ? JSON.parse(raw) : [];
+    const prevSet = new Set(Array.isArray(prev) ? prev : []);
+    const unseen = ids.filter(id => !prevSet.has(id));
+    if (unseen.length > 0) {
+      el.style.display = 'inline-flex';
+      el.textContent = '🆕 ' + unseen.length + ' new issue' + (unseen.length === 1 ? '' : 's') + ' today';
+    } else {
+      el.style.display = 'none';
+      el.textContent = '';
+    }
+    localStorage.setItem(key, JSON.stringify(ids));
+  } catch {
+    el.style.display = 'none';
+  }
+}
+
+function ownerForDisplay(task) {
+  if (!task) return 'Unassigned';
+  if (task.milestone || task.isSummary) return '—';
+  return task.assignedTo || 'Unassigned';
+}
+
+function controlGanttRowsForAction(action, levelFocus) {
+  const root = action?.taskId ? taskById.get(action.taskId) : null;
+  if (!root) return [];
+  const summary = DATA.tasks.find(t => t.name === action.summaryName) || root;
+  const preds = (summary.predIds || []).map(id => taskById.get(id)).filter(Boolean).slice(0, 4);
+  const sucs = (summary.sucIds || []).map(id => taskById.get(id)).filter(Boolean).slice(0, 4);
+  const impactedMilestone = sucs.find(t => t.milestone) || (action.milestoneDate ? DATA.tasks.find(t => t.name === action.milestoneName) : null);
+  const level = Number(levelFocus || 3);
+  const childRows = DATA.tasks
+    .filter(t => t.parentUid != null && summary.uid != null && t.parentUid === summary.uid && t.outlineLevel === level + 1)
+    .slice(0, 8);
+
+  const rows = [];
+  preds.forEach(t => rows.push({ label: '↑ Pred: ' + trunc(t.name, 44), type: 'pred', task: t }));
+  rows.push({ label: '● Focus: ' + trunc(summary.name, 48), type: 'focus', task: summary });
+  childRows.forEach(t => rows.push({ label: '↳ L' + (level + 1) + ': ' + trunc(t.name, 42), type: 'child', task: t }));
+  sucs.forEach(t => rows.push({ label: '↓ Succ: ' + trunc(t.name, 44), type: 'suc', task: t }));
+  if (impactedMilestone && !rows.some(r => r.task?.id === impactedMilestone.id)) {
+    rows.push({ label: '🏁 Impact Milestone: ' + trunc(impactedMilestone.name, 42), type: 'mile', task: impactedMilestone });
+  }
+  return rows.filter(r => r.task && (r.task.start || r.task.finish));
+}
+
+function renderControlGantt() {
+  const select = document.getElementById('controlActionSelect');
+  const host = document.getElementById('controlGantt');
+  if (!select || !host) return;
+  const action = (DATA.actionItems || []).find(a => a.id === select.value) || (DATA.actionItems || [])[0];
+  if (!action) {
+    host.innerHTML = '<div style="padding:12px;color:var(--text2)">No action rows available.</div>';
+    return;
+  }
+  const levelFocus = document.getElementById('controlLevelSelect')?.value || '3';
+  const rows = controlGanttRowsForAction(action, levelFocus);
+  if (!rows.length) {
+    host.innerHTML = '<div style="padding:12px;color:var(--text2)">No dated rows found for selected control item.</div>';
+    return;
+  }
+
+  const minDate = new Date(Math.min(...rows.map(r => new Date(r.task.start || r.task.finish).getTime())));
+  const maxDate = new Date(Math.max(...rows.map(r => new Date(r.task.finish || r.task.start).getTime())));
+  minDate.setDate(minDate.getDate() - 7);
+  maxDate.setDate(maxDate.getDate() + 21);
+
+  const y = rows.map(r => r.label);
+  const taskRows = rows.filter(r => !r.task.milestone);
+  const mileRows = rows.filter(r => r.task.milestone);
+  const traces = [];
+  if (taskRows.length) {
+    traces.push({
+      type: 'bar',
+      orientation: 'h',
+      y: taskRows.map(r => r.label),
+      base: taskRows.map(r => r.task.start || r.task.finish),
+      x: taskRows.map(r => Math.max(86400000, new Date(r.task.finish || r.task.start).getTime() - new Date(r.task.start || r.task.finish).getTime() + 86400000)),
+      marker: {
+        color: taskRows.map(r => r.type === 'focus' ? '#4b6bfb' : r.type === 'pred' ? '#16a34a' : r.type === 'suc' ? '#2563eb' : '#94a3b8')
+      },
+      text: taskRows.map(r => fmtShort(r.task.start || r.task.finish) + ' → ' + fmtShort(r.task.finish || r.task.start)),
+      textposition: 'inside',
+      insidetextanchor: 'middle',
+      textfont: { color: '#fff', size: 10 },
+      hovertemplate: taskRows.map(r => '<b>' + esc(r.task.name) + '</b><br>Owner: ' + esc(ownerForDisplay(r.task)) + '<br>Start: ' + fmt(r.task.start) + '<br>Finish: ' + fmt(r.task.finish) + '<extra></extra>'),
+      showlegend: false
+    });
+  }
+  if (mileRows.length) {
+    traces.push({
+      type: 'scatter',
+      mode: 'markers+text',
+      x: mileRows.map(r => r.task.finish || r.task.start),
+      y: mileRows.map(r => r.label),
+      text: mileRows.map(r => '🏁 ' + fmtShort(r.task.finish || r.task.start)),
+      textposition: 'middle right',
+      marker: { size: 12, symbol: 'diamond', color: '#7c3aed', line: { width: 1, color: '#4c1d95' } },
+      hovertemplate: mileRows.map(r => '<b>' + esc(r.task.name) + '</b><br>Milestone: ' + fmt(r.task.finish || r.task.start) + '<extra></extra>'),
+      showlegend: false
+    });
+  }
+
+  Plotly.react(host, traces, {
+    margin: { l: 230, r: 16, t: 10, b: 34 },
+    paper_bgcolor: '#ffffff',
+    plot_bgcolor: '#f8fafc',
+    height: Math.max(360, rows.length * 34),
+    xaxis: { type: 'date', range: [minDate.toISOString(), maxDate.toISOString()], showgrid: true, gridcolor: '#e2e8f0', tickfont: { color: '#64748b', size: 10 } },
+    yaxis: { categoryorder: 'array', categoryarray: y, autorange: 'reversed', tickfont: { color: '#334155', size: 10.5 } },
+    showlegend: false
+  }, { displayModeBar: false, responsive: true });
+}
+
+function renderControlTab() {
+  const lanesHost = document.getElementById('controlLanes');
+  const totalsHost = document.getElementById('controlPriorityTotals');
+  const summaryHost = document.getElementById('controlSummaryWrap');
+  const actionSelect = document.getElementById('controlActionSelect');
+  if (!lanesHost || !summaryHost || !actionSelect) return;
+
+  const all = DATA.riskIssueTable || [];
+  const immediateCount = all.filter(r => r.attentionLane === 'Act Now').length;
+  const nextCount = all.filter(r => r.attentionLane === 'At Risk Soon').length;
+  const watchCount = all.filter(r => r.attentionLane === 'Watchlist').length;
+  const lanes = [
+    { key: 'Act Now', label: 'Immediate', color: '#fff1f2' },
+    { key: 'At Risk Soon', label: 'Next Up', color: '#eff6ff' },
+    { key: 'Watchlist', label: 'Keep Eye Out', color: '#ecfdf5' }
+  ];
+
+  const totalsHtml =
+    '<div class="control-priority-totals">' +
+      '<div class="control-priority-box immediate"><span class="k">Immediate</span><span class="v">' + immediateCount + '</span></div>' +
+      '<div class="control-priority-box next"><span class="k">Next Up</span><span class="v">' + nextCount + '</span></div>' +
+      '<div class="control-priority-box watch"><span class="k">Keep Eye Out</span><span class="v">' + watchCount + '</span></div>' +
+    '</div>';
+
+  if (totalsHost) totalsHost.innerHTML = totalsHtml;
+
+  lanesHost.innerHTML = lanes.map(l => {
+    const rows = all.filter(r => r.attentionLane === l.key).slice(0, 25);
+    const cards = rows.length ? rows.map(r =>
+      '<div class="control-card">' +
+        '<div class="control-card-title">' + esc(trunc(r.summaryName || r.taskName, 54)) + '</div>' +
+        '<div>' + esc(trunc(r.impactChain || r.issue || '', 90)) + '</div>' +
+        '<div style="margin-top:4px">' +
+          '<span class="control-chip">↑' + esc(String(r.predCount || 0)) + ' ↓' + esc(String(r.sucCount || 0)) + '</span>' +
+          (r.scheduleQualitySeverity ? '<span class="control-chip">QA: ' + esc(r.scheduleQualitySeverity) + '</span>' : '') +
+          (r.scheduleQualityTags ? '<span class="control-chip">' + esc(trunc(r.scheduleQualityTags, 34)) + '</span>' : '') +
+          ((r.resourceCollisionCount || 0) > 0 ? '<span class="control-chip">👥 x' + esc(String(r.resourceCollisionCount)) + '</span>' : '') +
+          (r.cpmCritical ? '<span class="control-chip">🎯 critical</span>' : r.cpmNearCritical ? '<span class="control-chip">🟡 near</span>' : '') +
+        '</div>' +
+      '</div>'
+    ).join('') : '<div class="control-card" style="color:var(--text2)">No items</div>';
+
+    return '<section class="control-lane">' +
+      '<div class="control-lane-hd" style="background:' + l.color + '"><span>' + esc(l.label) + '</span><span>' + rows.length + '</span></div>' +
+      '<div class="control-lane-body">' + cards + '</div>' +
+    '</section>';
+  }).join('');
+
+  const summaryRows = (DATA.attentionBySummary || []).slice(0, 80);
+  summaryHost.innerHTML = '<table class="control-table"><thead><tr>' +
+    '<th>Summary</th><th>Overall</th><th>Act Now</th><th>At Risk</th><th>Watch</th><th>Worst Slack</th><th>Driver</th><th>Res Collision</th><th>Examples</th>' +
+    '</tr></thead><tbody>' +
+    (summaryRows.length ? summaryRows.map(r => '<tr>' +
+      '<td><strong>' + esc(trunc(r.summaryName, 40)) + '</strong></td>' +
+      '<td>' + esc(String(r.overallCategory || 'Watch')) + '</td>' +
+      '<td>' + esc(String(r.actNow || 0)) + '</td>' +
+      '<td>' + esc(String(r.atRiskSoon || 0)) + '</td>' +
+      '<td>' + esc(String(r.watchlist || 0)) + '</td>' +
+      '<td>' + esc(String(r.worstSlack ?? '—')) + '</td>' +
+      '<td>' + esc(String(r.maxDriverScore || 0)) + '</td>' +
+      '<td>' + esc(String(r.maxResourceCollision || 0)) + '</td>' +
+      '<td>' + esc(trunc((r.examples || []).join(' | '), 88)) + '</td>' +
+    '</tr>').join('') : '<tr><td colspan="9" style="color:var(--text2)">No summary rollups found.</td></tr>') +
+    '</tbody></table>';
+
+  const opts = (DATA.actionItems || []).slice(0, 120).map(a =>
+    '<option value="' + esc(a.id) + '">' + esc(trunc((a.summaryName || a.taskName) + ' — ' + (a.attentionLane || ''), 90)) + '</option>'
+  ).join('');
+  actionSelect.innerHTML = opts;
+  document.getElementById('controlRefreshBtn')?.addEventListener('click', () => renderControlGantt());
+  document.getElementById('controlLevelSelect')?.addEventListener('change', () => renderControlGantt());
+  actionSelect.addEventListener('change', () => renderControlGantt());
+  renderControlGantt();
 }
 
 function yield_() { return new Promise(r => setTimeout(r, 0)); }
@@ -1984,9 +2910,20 @@ async function init() {
   const m = DATA.metrics;
   document.getElementById("healthBadge").textContent = m.healthLabel;
   document.getElementById("genTime").textContent = "Generated " + new Date(DATA.generatedAt).toLocaleString();
+  updateNewIssueAlert();
+  const pv = DATA.provenance || {};
+  const footer = document.getElementById('provenanceFooter');
+  if (footer) {
+    const align = pv.sourceAlignedToLatestStaging ? 'aligned' : 'not aligned';
+    const src = pv.primarySourceFile || 'unknown source';
+    footer.textContent = 'Source: ' + src + ' · ' + align;
+    footer.title = 'Latest staging: ' + (pv.latestStagingCsv || 'n/a') + '\\nPrimary source: ' + src + '\\nImport version: ' + (pv.primaryImportVersion || 'n/a');
+  }
   const kpis = [
     {label:"Total Tasks",val:m.total,cls:"blue"},
     {label:"Open",val:m.totalOpen,cls:"blue"},
+    {label:"Critical Path",val:m.criticalPathCount||0,cls:(m.criticalPathCount||0)>0?"amber":"green"},
+    {label:"Near Critical",val:m.nearCriticalCount||0,cls:(m.nearCriticalCount||0)>0?"amber":"green"},
     {label:"Slipped Open",val:m.slippedOpen,cls:"red"},
     {label:"Slip Rate",val:m.slipRatePct+"%",cls:parseFloat(m.slipRatePct)>=75?"red":parseFloat(m.slipRatePct)>=50?"amber":"green"},
     {label:"Due 14d",val:m.due14,cls:m.due14>=100?"red":m.due14>=60?"amber":"green"},
@@ -2174,13 +3111,22 @@ function renderDepPanel(task) {
 
 // ── Gantt tab ──────────────────────────────────────────────────────────────
 function renderGantt() {
-  const wsFilter = document.getElementById("ganttWs").value;
-  const timeWindow = document.getElementById("ganttWindow").value;
-  const scale = document.getElementById("ganttScale").value;
-  const riskFilter = document.getElementById("ganttRiskType").value;
-  const showMiles = document.getElementById("ganttMilestones").checked;
-  const showIssue = document.getElementById("ganttIssues").checked;
-  const showSlip = document.getElementById("ganttSlipped").checked;
+  const wsEl = document.getElementById("ganttWs");
+  const winEl = document.getElementById("ganttWindow");
+  const scaleEl = document.getElementById("ganttScale");
+  const riskEl = document.getElementById("ganttRiskType");
+  const milesEl = document.getElementById("ganttMilestones");
+  const issueEl = document.getElementById("ganttIssues");
+  const slipEl = document.getElementById("ganttSlipped");
+  if (!wsEl || !winEl || !scaleEl || !riskEl || !milesEl || !issueEl || !slipEl) return;
+
+  const wsFilter = wsEl.value;
+  const timeWindow = winEl.value;
+  const scale = scaleEl.value;
+  const riskFilter = riskEl.value;
+  const showMiles = milesEl.checked;
+  const showIssue = issueEl.checked;
+  const showSlip = slipEl.checked;
 
   const hasRiskType = (t, key) => t.linkedRisks.some(r => (r.type + " — " + r.category) === key);
 
