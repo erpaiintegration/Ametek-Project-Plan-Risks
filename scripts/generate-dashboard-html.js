@@ -501,6 +501,17 @@ function fmtIso(d) {
   return String(d).slice(0, 10);
 }
 
+function buildReleaseId(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const yyyy = date.getUTCFullYear();
+  const mm = pad(date.getUTCMonth() + 1);
+  const dd = pad(date.getUTCDate());
+  const hh = pad(date.getUTCHours());
+  const min = pad(date.getUTCMinutes());
+  const ss = pad(date.getUTCSeconds());
+  return `${yyyy}.${mm}.${dd}-${hh}${min}${ss}Z`;
+}
+
 function rankLinkedTask(t) {
   if (!t) return -1;
   let score = 0;
@@ -679,6 +690,7 @@ async function main() {
   ]);
 
   const now = new Date();
+  const releaseId = buildReleaseId(now);
   const in14 = new Date(now.getTime() + 14 * 86400000);
   const in30 = new Date(now.getTime() + 30 * 86400000);
 
@@ -1106,6 +1118,10 @@ async function main() {
   
   const bootstrapPayload = {
     generatedAt: now.toISOString(),
+    build: {
+      releaseId,
+      label: `Build ${releaseId}`
+    },
     metrics: {
       total: workTaskCount,
       totalImported,
@@ -1139,6 +1155,10 @@ async function main() {
 
   const fullTaskPayload = {
     generatedAt: now.toISOString(),
+    build: {
+      releaseId,
+      label: `Build ${releaseId}`
+    },
     provenance,
     cpmSummary,
     riskIssueTable,
@@ -1406,6 +1426,7 @@ ${plotlyScript}
   .control-toolbar select,.control-toolbar button{font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);}
   .control-gantt{flex:1;min-height:360px;border:1px solid var(--border);border-radius:10px;background:var(--surface);}
   .prov-footer{position:fixed;right:10px;bottom:6px;font-size:10px;color:#6b7280;opacity:.8;background:rgba(255,255,255,.75);border:1px solid #e5e7eb;border-radius:999px;padding:3px 8px;z-index:9000;backdrop-filter: blur(3px);max-width:58vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .build-footer{position:fixed;left:10px;bottom:6px;font-size:9px;color:#94a3b8;opacity:.72;letter-spacing:.04em;z-index:8999;white-space:nowrap;pointer-events:none;user-select:none;}
   @keyframes spin{to{transform:rotate(360deg)}}
   ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
@@ -1666,6 +1687,7 @@ ${plotlyScript}
 </div>
 <div id="ganttTip"></div>
 <div id="provenanceFooter" class="prov-footer" title="Source lineage"></div>
+<div id="buildFooter" class="build-footer" title="Dashboard build release"></div>
 
 <script>
 const DATA = ${data};
@@ -2918,6 +2940,12 @@ async function init() {
     const src = pv.primarySourceFile || 'unknown source';
     footer.textContent = 'Source: ' + src + ' · ' + align;
     footer.title = 'Latest staging: ' + (pv.latestStagingCsv || 'n/a') + '\\nPrimary source: ' + src + '\\nImport version: ' + (pv.primaryImportVersion || 'n/a');
+  }
+  const buildFooter = document.getElementById('buildFooter');
+  if (buildFooter) {
+    const buildLabel = DATA.build?.label || ('Build ' + (DATA.generatedAt || 'unknown'));
+    buildFooter.textContent = buildLabel;
+    buildFooter.title = 'Dashboard build release\nGenerated: ' + new Date(DATA.generatedAt).toLocaleString();
   }
   const kpis = [
     {label:"Total Tasks",val:m.total,cls:"blue"},
