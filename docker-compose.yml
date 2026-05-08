@@ -1,7 +1,7 @@
 services:
   openclaw-gateway:
     image: ghcr.io/phioranex/openclaw-docker:latest
-    command: ["node", "/app/dist/index.js", "--allow-unconfigured"]
+    command: ["/app/dist/index.js", "--allow-unconfigured"]
     restart: always
     stdin_open: true
     tty: true
