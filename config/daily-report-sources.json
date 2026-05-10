@@ -1,0 +1,115 @@
+{
+  "report_name": "Ametek SAP S4 Impl Daily Report",
+  "output_dir": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\Ametek SAP S4 Daily Report",
+  "snapshot_file": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\Ametek SAP S4 Daily Report\\last_snapshot.json",
+  "sources": [
+    {
+      "name": "project_plan",
+      "entity_type": "project_plan",
+      "path_glob": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\SAP Implementation Project - Documents\\00 - PMO\\02 - Project Planning\\AMETEK SAP S4 Master Project Plan 3ITC May EXCEL.xlsx",
+      "pick": "latest",
+      "sheet_name": "Project Plan",
+      "header_row": 0,
+      "required": true,
+      "column_map": {
+        "record_id": "WBS",
+        "task_name": "Task Name",
+        "workstream": "Task Summary Name",
+        "owner": "Resource Names",
+        "start_date": "Start",
+        "finish_date": "Finish",
+        "baseline_finish": "Baseline Finish",
+        "percent_complete": "% Complete",
+        "duration": "Duration",
+        "predecessor_ids": "Predecessors",
+        "actual_start": "Actual Start"
+      }
+    },
+    {
+      "name": "testing",
+      "entity_type": "testing",
+      "path_glob": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\Ametek SAP S4 Daily Report\\SAP S_4HANA Implementation-Test Execution and Defects-*.xls",
+      "pick": "latest",
+      "sheet_name": "RL-3 ITC1",
+      "header_row": 1,
+      "required": false,
+      "column_map": {
+        "record_id": "ID",
+        "task_name": "Name",
+        "workstream": "Directory",
+        "owner": "Tester",
+        "status": "Status",
+        "priority": "Priority",
+        "planned_date": "Planned Start Date",
+        "finish_date": "Planned End Date",
+        "executed_date": "Executed Start",
+        "defect_count": "# of Associated Defects",
+        "defects_new": "New",
+        "defects_in_progress": "In Progress",
+        "defects_closed": "Closed"
+      }
+    },
+    {
+      "name": "raid_risks",
+      "entity_type": "raid",
+      "path_glob": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\SAP Implementation Project - Documents\\00 - PMO\\04 - Project Tracking and Reporting\\AMETEK SAP S4 RAID Log.xlsm",
+      "pick": "latest",
+      "sheet_name": "Risks",
+      "header_row": 0,
+      "required": false,
+      "column_map": {
+        "record_id": "Risk ID",
+        "task_name": "Risk Title (brief)",
+        "status": "Risk Status",
+        "probability": "Probability",
+        "impact": "Impact",
+        "risk_score": "Risk Exposure",
+        "owner": "Assigned To",
+        "due_date": "Due Date",
+        "logged_by": "Logged By",
+        "description": "Risk Description",
+        "mitigation": "Mitigation Strategy"
+      }
+    },
+    {
+      "name": "raid_issues",
+      "entity_type": "raid",
+      "path_glob": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\SAP Implementation Project - Documents\\00 - PMO\\04 - Project Tracking and Reporting\\AMETEK SAP S4 RAID Log.xlsm",
+      "pick": "latest",
+      "sheet_name": "Issues",
+      "header_row": 0,
+      "required": false,
+      "column_map": {
+        "record_id": "Issue ID",
+        "task_name": "Issue Title (brief)",
+        "workstream": "Workstream",
+        "status": "Issue Status",
+        "priority": "Issue Priority",
+        "owner": "Assigned To",
+        "due_date": "Due Date",
+        "logged_by": "Logged By",
+        "description": "Issue Description"
+      }
+    },
+    {
+      "name": "raid_actions",
+      "entity_type": "raid",
+      "path_glob": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\SAP Implementation Project - Documents\\00 - PMO\\04 - Project Tracking and Reporting\\AMETEK SAP S4 RAID Log.xlsm",
+      "pick": "latest",
+      "sheet_name": "Actions",
+      "header_row": 0,
+      "required": false,
+      "column_map": {
+        "record_id": "Action Item ID",
+        "task_name": "Issue Title (brief)",
+        "workstream": " Workstream",
+        "status": "Action Item Status",
+        "priority": "Action Item Priority",
+        "owner": "Assigned To",
+        "due_date": "Target Date",
+        "logged_by": "Logged By",
+        "description": "Action Item Description"
+      }
+    }
+  ]
+}

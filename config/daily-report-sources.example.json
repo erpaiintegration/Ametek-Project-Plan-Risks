@@ -1,0 +1,92 @@
+{
+  "report_name": "Ametek SAP S4 Impl Daily Report",
+  "output_dir": "outputs/daily_report",
+  "snapshot_file": "outputs/daily_report/last_snapshot.json",
+  "sources": [
+    {
+      "name": "project_plan",
+      "entity_type": "project_plan",
+      "path_glob": "imports/staging/*MSP Task.csv",
+      "pick": "latest",
+      "header_row": 0,
+      "column_map": {
+        "record_id": "Unique ID",
+        "task_name": "Task Name",
+        "workstream": "Workstream",
+        "owner": "Resource Names",
+        "start_date": "Start",
+        "finish_date": "Finish",
+        "baseline_finish": "Baseline Finish",
+        "percent_complete": "% Complete",
+        "status": "Status",
+        "predecessor_ids": "Unique ID Predecessors",
+        "critical_flag": "Critical",
+        "milestone_flag": "Milestone"
+      }
+    },
+    {
+      "name": "testing",
+      "entity_type": "testing",
+      "path_glob": "imports/staging/testing*.xlsx",
+      "pick": "latest",
+      "sheet_name": "Execution",
+      "header_row": 0,
+      "required": false,
+      "column_map": {
+        "record_id": "Test ID",
+        "task_id": "Task ID",
+        "task_name": "Task Name",
+        "cycle": "Cycle",
+        "workstream": "Workstream",
+        "owner": "Tester",
+        "status": "Status",
+        "planned_date": "Planned Date",
+        "executed_date": "Executed Date",
+        "defect_id": "Defect ID"
+      }
+    },
+    {
+      "name": "defects",
+      "entity_type": "defects",
+      "path_glob": "imports/staging/defects*.xlsx",
+      "pick": "latest",
+      "sheet_name": "Defects",
+      "header_row": 0,
+      "required": false,
+      "column_map": {
+        "record_id": "Defect ID",
+        "task_id": "Task ID",
+        "test_id": "Test ID",
+        "task_name": "Task Name",
+        "workstream": "Workstream",
+        "severity": "Severity",
+        "priority": "Priority",
+        "status": "Status",
+        "opened_date": "Opened Date",
+        "closed_date": "Closed Date",
+        "owner": "Owner"
+      }
+    },
+    {
+      "name": "raid",
+      "entity_type": "raid",
+      "path_glob": "imports/staging/raid*.xlsx",
+      "pick": "latest",
+      "sheet_name": "RAID",
+      "header_row": 0,
+      "required": false,
+      "column_map": {
+        "record_id": "RAID ID",
+        "task_id": "Task ID",
+        "defect_id": "Defect ID",
+        "task_name": "Title",
+        "workstream": "Workstream",
+        "owner": "Owner",
+        "raid_type": "Type",
+        "status": "Status",
+        "priority": "Priority",
+        "due_date": "Due Date"
+      }
+    }
+  ]
+}
