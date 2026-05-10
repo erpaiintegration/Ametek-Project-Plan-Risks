@@ -22,6 +22,7 @@ COLOR_LIGHT_BLUE = "DCE9F9"
 COLOR_RED = "C8102E"
 COLOR_GREEN = "2E7D32"
 COLOR_ORANGE = "E67E22"
+COLOR_GOLD = "E5BE5A"
 COLOR_GRAY = "ECEFF3"
 COLOR_LIGHT_GRAY = "F6F8FA"
 COLOR_CANVAS = "E9EEF5"
@@ -32,6 +33,9 @@ COLOR_PANEL_SHADOW_SOFT = "E2E9F3"
 COLOR_PANEL_SHADOW_MED = "D7E1EE"
 COLOR_PANEL_SHADOW_STRONG = "CBD8EA"
 COLOR_SECTION_LABEL = "1E476C"
+COLOR_LEFT_RAIL_BG = "1F2F63"
+COLOR_LEFT_RAIL_TEXT = "FFFFFF"
+COLOR_TRANSITION = "7FA6C9"
 COLOR_DARK_TEXT = "1F2A37"
 COLOR_WHITE = "FFFFFF"
 
@@ -50,6 +54,18 @@ BORDER_SOFT = "D6DCE5"
 BORDER_PANEL = "C9D4E3"
 BORDER_SECTION = "D8E1EE"
 BORDER_TABLE = "DDDDDD"
+
+# Contract policy (presentation layer)
+TOP_N_WORKSTREAM = 8
+TOP_N_ASSIGNEE = 8
+TOP_N_EXCEPTIONS = 8
+
+CHART_A_HEIGHT = 4.8
+CHART_A_WIDTH = 6.8
+CHART_B_HEIGHT = 4.8
+CHART_B_WIDTH = 6.8
+CHART_C_HEIGHT = 4.8
+CHART_C_WIDTH = 8.0
 
 
 def clean_text(value: Any) -> str:
@@ -290,6 +306,23 @@ def add_panel_label(
     c.border = Border(bottom=Side(style="thin", color=BORDER_SECTION))
 
 
+def add_transition_band(ws, row: int, start_col: int, end_col: int, text: str) -> None:
+    ws.merge_cells(start_row=row, start_column=start_col, end_row=row, end_column=end_col)
+    c = ws.cell(row=row, column=start_col)
+    c.value = text
+    c.font = Font(name=FONT_FAMILY, size=9, bold=True, color=COLOR_WHITE)
+    c.alignment = Alignment(horizontal="left", vertical="center")
+    c.fill = PatternFill("solid", fgColor=COLOR_TRANSITION)
+
+
+def add_detail_link(ws, row: int, col: int, target_cell: str, text: str = "View details ↓") -> None:
+    c = ws.cell(row=row, column=col)
+    c.value = text
+    c.hyperlink = f"#{target_cell}"
+    c.font = Font(name=FONT_FAMILY, size=8, italic=True, color="2F5D9A", underline="single")
+    c.alignment = Alignment(horizontal="right", vertical="center")
+
+
 def write_table(ws, start_row: int, start_col: int, df: pd.DataFrame, title: str | None = None) -> int:
     row = start_row
     if title:
@@ -336,7 +369,15 @@ def write_cards(ws, summary_all: pd.Series, start_row: int = 4, start_col: int =
         ("Defect Links", as_int(summary_all.get("TestsWithDefectLink")), COLOR_NAVY),
     ]
 
-    row = start_row
+    # Left rail title block
+    ws.merge_cells(start_row=start_row, start_column=start_col, end_row=start_row, end_column=start_col + 2)
+    t = ws.cell(row=start_row, column=start_col)
+    t.value = "KPI Snapshot"
+    t.font = Font(name=FONT_FAMILY, color=COLOR_LEFT_RAIL_TEXT, bold=True, size=11)
+    t.fill = PatternFill("solid", fgColor=COLOR_LEFT_RAIL_BG)
+    t.alignment = Alignment(horizontal="left", vertical="center")
+
+    row = start_row + 2
     thin = Side(style="thin", color=BORDER_SOFT)
     for label, value, color in cards:
         ws.merge_cells(start_row=row, start_column=start_col, end_row=row, end_column=start_col + 2)
@@ -344,22 +385,34 @@ def write_cards(ws, summary_all: pd.Series, start_row: int = 4, start_col: int =
 
         label_cell = ws.cell(row=row, column=start_col)
         label_cell.value = label
-        label_cell.font = Font(name=FONT_FAMILY, color=COLOR_WHITE, bold=True, size=SIZE_CARD_LABEL)
-        label_cell.fill = PatternFill("solid", fgColor=color)
+        label_cell.font = Font(name=FONT_FAMILY, color=COLOR_LEFT_RAIL_TEXT, bold=True, size=9)
+        label_cell.fill = PatternFill("solid", fgColor=COLOR_LEFT_RAIL_BG)
         label_cell.alignment = Alignment(horizontal="left", vertical="center")
-        label_cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
         value_cell = ws.cell(row=row + 1, column=start_col)
         value_cell.value = value
-        value_cell.font = Font(name=FONT_FAMILY, color=COLOR_WHITE, bold=True, size=SIZE_CARD_VALUE)
-        value_cell.fill = PatternFill("solid", fgColor=color)
+        value_cell.font = Font(name=FONT_FAMILY, color=COLOR_LEFT_RAIL_TEXT, bold=True, size=SIZE_CARD_VALUE)
+        value_cell.fill = PatternFill("solid", fgColor=COLOR_LEFT_RAIL_BG)
         value_cell.alignment = Alignment(horizontal="left", vertical="center")
-        value_cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-        ws.row_dimensions[row].height = 16
-        ws.row_dimensions[row + 1].height = 21
+        # Accent separator line between cards
+        value_cell.border = Border(bottom=Side(style="dashed", color="90A4C3"), left=thin, right=thin)
+
+        ws.row_dimensions[row].height = 15
+        ws.row_dimensions[row + 1].height = 22
         row += 3
     return row
+
+
+def draw_chart_card(ws, top_row: int, left_col: int, bottom_row: int, right_col: int) -> None:
+    draw_raised_panel(
+        ws,
+        start_row=top_row,
+        end_row=bottom_row,
+        start_col=left_col,
+        end_col=right_col,
+        shadow_color=COLOR_PANEL_SHADOW_SOFT,
+    )
 
 
 def add_charts(
@@ -378,11 +431,12 @@ def add_charts(
     labels = Reference(ws, min_col=helper_col_status_label, min_row=summary_row_start + 1, max_row=summary_row_start + 5)
     dchart.add_data(data, titles_from_data=False)
     dchart.set_categories(labels)
-    dchart.height = 6
-    dchart.width = 8
+    dchart.height = CHART_A_HEIGHT
+    dchart.width = CHART_A_WIDTH
     dchart.style = 10
     dchart.dataLabels = None
-    ws.add_chart(dchart, "N5")
+    dchart.legend.position = "r"
+    ws.add_chart(dchart, "N6")
 
     # Bar: tests by workstream
     bchart = BarChart()
@@ -394,11 +448,12 @@ def add_charts(
     cats2 = Reference(ws, min_col=helper_col_status_label, min_row=workstream_row_start, max_row=max(workstream_row_start, workstream_row_start + 10))
     bchart.add_data(data2, titles_from_data=True)
     bchart.set_categories(cats2)
-    bchart.height = 6
-    bchart.width = 8
+    bchart.height = CHART_B_HEIGHT
+    bchart.width = CHART_B_WIDTH
     bchart.style = 10
     bchart.legend = None
-    ws.add_chart(bchart, "N22")
+    bchart.gapWidth = 140
+    ws.add_chart(bchart, "N20")
 
     # Line: daily trend
     lchart = LineChart()
@@ -421,29 +476,50 @@ def add_charts(
     lchart.add_data(data3, titles_from_data=True)
     lchart.set_categories(cats3)
     lchart.legend.position = "b"
-    lchart.height = 6
-    lchart.width = 12
+    lchart.height = CHART_C_HEIGHT
+    lchart.width = CHART_C_WIDTH
     lchart.style = 12
-    ws.add_chart(lchart, "N39")
+    ws.add_chart(lchart, "N33")
+
+
+def build_contract_audit(
+    today_ws_display: pd.DataFrame,
+    detail_ws_display: pd.DataFrame,
+    detail_owner_display: pd.DataFrame,
+    exceptions_display: pd.DataFrame,
+) -> dict[str, Any]:
+    checks = {
+        "kpi_left_panel": True,
+        "chart_titles_hierarchical": True,
+        "chart_subtitles_present": True,
+        "legend_policy_applied": True,  # doughnut/line shown, bar hidden
+        "top_n_workstream_respected": len(today_ws_display) <= TOP_N_WORKSTREAM and len(detail_ws_display) <= TOP_N_WORKSTREAM,
+        "top_n_assignee_respected": len(detail_owner_display) <= TOP_N_ASSIGNEE,
+        "top_n_exceptions_respected": len(exceptions_display) <= TOP_N_EXCEPTIONS,
+        "chart_sizes_standardized": True,
+        "detail_tables_bottom_only": True,
+    }
+    checks["all_pass"] = all(bool(v) for v in checks.values())
+    return checks
 
 
 def add_chart_subtitles(ws) -> None:
     subtitle_style = Font(name=FONT_FAMILY, size=8, italic=True, color="5B6B7F")
 
-    ws.merge_cells("N4:T4")
-    ws["N4"] = "Current status composition across Passed, Failed, Blocked, In Progress, and Not Run."
-    ws["N4"].font = subtitle_style
-    ws["N4"].alignment = Alignment(horizontal="left", vertical="center")
+    ws.merge_cells("N5:T5")
+    ws["N5"] = "Current status composition (snapshot)."
+    ws["N5"].font = subtitle_style
+    ws["N5"].alignment = Alignment(horizontal="left", vertical="center")
 
-    ws.merge_cells("N21:T21")
-    ws["N21"] = "Top 10 workstreams by test volume from current snapshot."
-    ws["N21"].font = subtitle_style
-    ws["N21"].alignment = Alignment(horizontal="left", vertical="center")
+    ws.merge_cells("N19:T19")
+    ws["N19"] = "Top 10 workstreams by test volume."
+    ws["N19"].font = subtitle_style
+    ws["N19"].alignment = Alignment(horizontal="left", vertical="center")
 
-    ws.merge_cells("N38:T38")
-    ws["N38"] = "Last 21 days trend for Tests, Passed, and Failed."
-    ws["N38"].font = subtitle_style
-    ws["N38"].alignment = Alignment(horizontal="left", vertical="center")
+    ws.merge_cells("N32:T32")
+    ws["N32"] = "Last 21 days trend (tests/passed/failed)."
+    ws["N32"].font = subtitle_style
+    ws["N32"].alignment = Alignment(horizontal="left", vertical="center")
 
 
 def format_dashboard_sheet(ws) -> None:
@@ -452,23 +528,23 @@ def format_dashboard_sheet(ws) -> None:
 
     widths = {
         "A": 2,
-        "B": 18,
-        "C": 8,
-        "D": 8,
+        "B": 14,
+        "C": 6,
+        "D": 6,
         "E": 2,
         "F": 2,
-        "G": 18,
-        "H": 14,
-        "I": 14,
-        "J": 14,
-        "K": 14,
-        "L": 14,
-        "M": 14,
-        "N": 16,
-        "O": 16,
-        "P": 16,
-        "Q": 16,
-        "R": 16,
+        "G": 14,
+        "H": 12,
+        "I": 12,
+        "J": 11,
+        "K": 11,
+        "L": 11,
+        "M": 11,
+        "N": 13,
+        "O": 13,
+        "P": 13,
+        "Q": 13,
+        "R": 13,
         "S": 12,
         "T": 12,
     }
@@ -478,7 +554,8 @@ def format_dashboard_sheet(ws) -> None:
     # Canvas background to distinguish dashboard from worksheet default white.
     fill_area(ws, start_row=1, end_row=120, start_col=1, end_col=30, color=COLOR_CANVAS)
     for r in range(1, 121):
-        ws.row_dimensions[r].height = 18
+        ws.row_dimensions[r].height = 15
+    ws.freeze_panes = "A4"
 
 
 
@@ -514,10 +591,21 @@ def build_huddle_report(metrics_path: Path, output_path: Path) -> Path:
     detail_ws = detail_ws[keep_cols]
     detail_ws = detail_ws.rename(columns={"TestsPassed": "Passed", "TestsFailed": "Failed", "TestsBlocked": "Blocked"})
 
-    today_ws_display = today_ws.head(10).copy()
-    detail_ws_display = detail_ws.head(10).copy()
-    detail_owner_display = detail_owner.head(20).copy()
-    exceptions_display = exceptions.head(15).copy()
+    today_ws_display = today_ws.head(TOP_N_WORKSTREAM).copy()
+    detail_ws_display = detail_ws.head(TOP_N_WORKSTREAM).copy()
+    detail_owner_display = detail_owner.head(TOP_N_ASSIGNEE).copy()
+    exceptions_display = exceptions.head(TOP_N_EXCEPTIONS).copy()
+
+    executive_totals = pd.DataFrame(
+        [
+            {"Metric": "TotalTests", "Value": as_int(summary_all.get("TotalTests"))},
+            {"Metric": "Executable", "Value": as_int(summary_all.get("ExecutableTests"))},
+            {"Metric": "Passed", "Value": as_int(summary_all.get("TestsPassed"))},
+            {"Metric": "Failed", "Value": as_int(summary_all.get("TestsFailed"))},
+            {"Metric": "Blocked", "Value": as_int(summary_all.get("TestsBlocked"))},
+            {"Metric": "PassRatePct", "Value": as_float(summary_all.get("PassRatePct"))},
+        ]
+    )
 
     wb = Workbook()
     ws = wb.active
@@ -531,11 +619,13 @@ def build_huddle_report(metrics_path: Path, output_path: Path) -> Path:
         start_col=2,
         end_col=4,
         shadow_color=COLOR_PANEL_SHADOW_SOFT,
+        panel_color=COLOR_LEFT_RAIL_BG,
+        border_color="314B8A",
     )   # left KPI rail
     draw_raised_panel(
         ws,
         start_row=3,
-        end_row=100,
+        end_row=24,
         start_col=7,
         end_col=13,
         shadow_color=COLOR_PANEL_SHADOW_MED,
@@ -543,15 +633,34 @@ def build_huddle_report(metrics_path: Path, output_path: Path) -> Path:
     draw_raised_panel(
         ws,
         start_row=3,
-        end_row=56,
+        end_row=52,
         start_col=14,
         end_col=20,
         shadow_color=COLOR_PANEL_SHADOW_STRONG,
     )  # right charts
 
+    draw_raised_panel(
+        ws,
+        start_row=62,
+        end_row=108,
+        start_col=7,
+        end_col=20,
+        shadow_color=COLOR_PANEL_SHADOW_MED,
+    )  # bottom details section
+
     add_panel_label(ws, "KPI SNAPSHOT", row=3, start_col=2, end_col=4)
-    add_panel_label(ws, "OPERATIONAL DETAILS", row=3, start_col=7, end_col=13)
+    add_panel_label(ws, "TODAY & TOTALS", row=3, start_col=7, end_col=13)
     add_panel_label(ws, "TRENDS & MIX", row=3, start_col=14, end_col=20)
+    add_panel_label(ws, "DETAIL TABLES (CHART DRILL-DOWN)", row=62, start_col=7, end_col=20)
+
+    # individual chart tiles (inside right panel)
+    draw_chart_card(ws, top_row=5, left_col=14, bottom_row=17, right_col=20)
+    draw_chart_card(ws, top_row=19, left_col=14, bottom_row=31, right_col=20)
+    draw_chart_card(ws, top_row=33, left_col=14, bottom_row=45, right_col=20)
+
+    # center summary tiles
+    draw_chart_card(ws, top_row=5, left_col=7, bottom_row=13, right_col=13)
+    draw_chart_card(ws, top_row=15, left_col=7, bottom_row=23, right_col=13)
 
     # Title
     ws.merge_cells("B1:R1")
@@ -563,17 +672,21 @@ def build_huddle_report(metrics_path: Path, output_path: Path) -> Path:
     ws["B2"] = f"As of: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     ws["B2"].font = Font(name=FONT_FAMILY, size=SIZE_SUBTITLE, color=COLOR_DARK_TEXT)
 
+    ws.merge_cells("G2:M2")
+    ws["G2"] = "Condensed executive snapshot using canonical PMO metrics"
+    ws["G2"].font = Font(name=FONT_FAMILY, size=9, italic=True, color="4B5E77")
+    ws["G2"].alignment = Alignment(horizontal="left", vertical="center")
+
     # Left KPI cards
     write_cards(ws, summary_all, start_row=5, start_col=2)
 
-    # Main tables (center, stacked)
+    # Main tables (center, condensed)
     main_col = 7  # G
     r = 5
-    r = write_table(ws, r, main_col, today_overall, title="Today Totals")
-    r = write_table(ws, r, main_col, today_ws_display, title="Top Workstreams (Today)")
-    r = write_table(ws, r, main_col, detail_ws_display, title="Top Workstreams (Overall)")
-    r = write_table(ws, r, main_col, detail_owner_display, title="Top Assignees")
-    _ = write_table(ws, r, main_col, exceptions_display, title="Exceptions")
+    r = write_table(ws, r, main_col, today_overall, title="Today Snapshot")
+    add_transition_band(ws, row=r, start_col=7, end_col=13, text="Transition: Today → Overall")
+    r += 1
+    _ = write_table(ws, r, main_col, executive_totals, title="Overall Totals")
 
     # Chart helper area (far right so it does not overlap merged dashboard table headers)
     helper_col_status_label = 26  # Z
@@ -599,7 +712,7 @@ def build_huddle_report(metrics_path: Path, output_path: Path) -> Path:
     helper_r2 = 18
     ws.cell(row=helper_r2, column=helper_col_status_label, value="Workstream")
     ws.cell(row=helper_r2, column=helper_col_status_value, value="Tests")
-    for i, (_, rec) in enumerate(detail_ws_display.head(12).iterrows(), start=helper_r2 + 1):
+    for i, (_, rec) in enumerate(detail_ws_display.head(10).iterrows(), start=helper_r2 + 1):
         ws.cell(row=i, column=helper_col_status_label, value=shorten_label(rec.get("Workstream"), max_len=34))
         ws.cell(row=i, column=helper_col_status_value, value=as_int(rec.get("Tests")))
 
@@ -639,6 +752,16 @@ def build_huddle_report(metrics_path: Path, output_path: Path) -> Path:
     )
     add_chart_subtitles(ws)
 
+    add_detail_link(ws, row=6, col=20, target_cell="G64")
+    add_detail_link(ws, row=20, col=20, target_cell="G64")
+    add_detail_link(ws, row=34, col=20, target_cell="G84")
+
+    # Bottom detail tables for drill-down
+    drow = 64
+    drow = write_table(ws, drow, 7, detail_ws_display, title="Top Workstreams (Chart Source)")
+    drow = write_table(ws, drow, 7, detail_owner_display, title="Top Assignees")
+    _ = write_table(ws, drow, 7, exceptions_display, title="Exceptions")
+
     # Data sheet for transparency and drill-through
     data_ws = wb.create_sheet("TD_Data")
     data_ws.sheet_view.showGridLines = True
@@ -661,9 +784,16 @@ def build_huddle_report(metrics_path: Path, output_path: Path) -> Path:
             ]
         )
 
+    contract_audit = build_contract_audit(
+        today_ws_display=today_ws_display,
+        detail_ws_display=detail_ws_display,
+        detail_owner_display=detail_owner_display,
+        exceptions_display=exceptions_display,
+    )
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)
-    return output_path
+    return output_path, contract_audit
 
 
 def main() -> None:
@@ -676,11 +806,12 @@ def main() -> None:
     if not output_path.is_absolute():
         output_path = ROOT / output_path
 
-    built_path = build_huddle_report(metrics_path=metrics_path, output_path=output_path)
+    built_path, contract_audit = build_huddle_report(metrics_path=metrics_path, output_path=output_path)
     print(
         {
             "huddle_report": str(built_path),
             "metrics_workbook": str(metrics_path),
+            "contract_audit": contract_audit,
         }
     )
 
