@@ -1,0 +1,186 @@
+I've cleaned up the ITC_Details sheet by removing the legend and RAID summary. Here's the updated layout:
+✅ ITC_Details — Cleaned Up
+Current Structure
+Section
+Rows
+Content
+Header
+1
+"DAILY STATUS REPORT — MILESTONE TRACKER" + Date
+Overall Project Status
+3-5
+8 KPI values with labels below (all formula-driven)
+▼ ITC1
+7-15
+Summary tile + 6 feeders table + Testing/Defects row
+▼ ITC2
+17-25
+Summary tile + 6 feeders table + Testing/Defects row
+▶ ITC3 (FUTURE)
+27-28
+Compact summary + feeders on one line
+Footer
+30
+Last Refreshed date
+Removed
+Legend row (was row 6)
+RAID Summary table (was rows 31-37)
+Note about workstreams (was row 38)
+📋 Canvas/Page for New Session
+Here's a complete summary you can paste into a new session to recreate this framework:
+PMO DASHBOARD FRAMEWORK — CANVAS
+1. Workbook Structure
+Sheet
+Purpose
+Metrics
+Source data — tbl_Metrics (Domain, Metric, Value) + tbl_AnalyticsCatalogue
+PMO_Report
+Summary view with ITC milestones, RAID, Long-Lead Items
+PMO_Meeting_Review
+Raw numbers for Project Plan, Testing, Defects, RAID
+ITC_Details
+Daily Status Report — Milestone Tracker with feeders
+QA_Details
+(Empty — reserved for QA)
+2. ITC_Details Layout
+1     Row 1:  DAILY STATUS REPORT — MILESTONE TRACKER                    [Date: =TODAY()]
+2
+3     Row 3:  OVERALL PROJECT STATUS
+4     Row 4:  [22.5%]   [2219]    [489]     [3]      [1]      [13]     [37]     [82.8]
+5     Row 5:  Progress  Tasks   Complete  On Sched  Late   Past Due  Miles.   Avg Slip
+6             (All formula-driven from Metrics! sheet)
+7
+8     Row 7:  ▼ ITC1  │  Progress: 85%  │  Target: 30-May-26  │  Tasks: 23/27  │  Tests: 150  │  Defects: 8  │  RAID: 14R 23I 12D
+9     Row 8:  [Header] Feeder | Status | % Done | Open | Blocked | Notes | Workstreams
+10     Row 9:  ├─ System Readiness | ● Complete | 100% | 0 | 0 | QA Refresh complete |
+11     Row 10: ├─ Security | ● Complete | 100% | 0 | 0 | Security validated |
+12     Row 11: ├─ Data Migration | ● Complete | 100% | 0 | 0 | Data load & master data complete |
+13     Row 12: ├─ Testing | ◐ In Progress | 45% | 8 | 2 | Test execution active | PTM(3) ● FIN(2) ● IT(1)
+14     Row 13: ├─ Training ┈┈┈┈► ITC1 | ◐ In Progress | 60% | 3 | 0 | Materials development | HR(2) ● OPS(1)
+15     Row 14: └─ RICEFW | ● Complete | 100% | 0 | 0 | Custom dev complete |
+16     Row 15: Testing/Defects: | 0 Tests | 0 Pass | 0 Fail | 0 Defects | 0 Critical
+17
+18     Row 17: ▼ ITC2  │  Progress: 0%  │  Target: 15-Jun-26  │  Tasks: 0/36  │  Tests: 0  │  Defects: 0  │  RAID: 5R 4I 2D
+19     Row 18: [Header] Feeder | Status | % Done | Open | Blocked | Notes | Workstreams
+20     Row 19: ├─ System Readiness | ○ Not Started | 0% | 0 | 0 | ⚠ QA Refresh pending |
+21     Row 20: ├─ Security | ○ Not Started | 0% | 0 | 0 | ⚠ Blocked - long lead | SEC(5)
+22     Row 21: ├─ Data Migration | ○ Not Started | 0% | 0 | 0 | ⚠ Awaiting ITC1 completion | DM(8) ● MDM(3)
+23     Row 22: ├─ Testing | ○ Not Started | 0% | 0 | 0 | Pending all feeders |
+24     Row 23: ├─ Training ┈┈┈┈► ITC2 | ○ Not Started | 0% | 0 | 0 | ⚠ Long-lead - plan early | HR(4) ● OPS(2)
+25     Row 24: └─ RICEFW | ○ Not Started | 0% | 0 | 0 | Pending ITC1 learnings | DEV(2)
+26     Row 25: Testing/Defects: | 0 Tests | 0 Pass | 0 Fail | 0 Defects | 0 Critical
+27
+28     Row 27: ▶ ITC3 (FUTURE)  │  Progress: 0%  │  Target: TBD  │  Tasks: 0/0  │  Tests: 0  │  Defects: 0  │  RAID: 0R 0I 0D
+29     Row 28:     ○ Sys Ready  │  ○ Security  │  ○ Data Migration  │  ○ Testing  │  ○ Training ┈┈► ITC3  │  ○ RICEFW
+30
+31     Row 30: Last Refreshed: [=TODAY()]
+3. Feeders (6 per ITC)
+Order
+Feeder
+Description
+1
+System Readiness
+QA Refresh
+2
+Security
+Security validation
+3
+Data Migration
+Data + Master Data combined
+4
+Testing
+Test execution
+5
+Training
+Training materials & delivery (long-lead)
+6
+RICEFW
+Custom development
+4. Status Indicators
+Symbol
+Meaning
+Color
+●
+Complete
+Green (#00B050)
+◐
+In Progress
+Blue (#4F81BD)
+○
+Not Started
+Gray (#888888)
+⚠
+At Risk / Warning
+Amber (#FFC000)
+┈┈►
+Dependency arrow
+Gray dotted
+5. Workstreams Column Format
+Shows open tasks by workstream abbreviation:
+1     PTM(3) ● FIN(2) ● IT(1)
+Bold abbreviation + count in parentheses
+Black bullet ● separates workstreams
+6. Key Formulas (from Metrics! sheet)
+Metric
+Formula
+Progress
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Project Plan",Metrics!B:B,"Avg % Complete")&"%"
+Tasks
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Project Plan",Metrics!B:B,"Total Tasks")
+Complete
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Project Plan",Metrics!B:B,"Complete")
+On Sched
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Project Plan",Metrics!B:B,"On Schedule")
+Late
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Project Plan",Metrics!B:B,"Late")
+Past Due
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Project Plan",Metrics!B:B,"Past Due")
+Milestones
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Project Plan",Metrics!B:B,"Milestones")
+Avg Slip
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Project Plan",Metrics!B:B,"Avg Schedule Slip (Days)")
+Open Risks
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Risks",Metrics!B:B,"Open")
+Open Issues
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Issues",Metrics!B:B,"Open / Escalated")
+Open Decisions
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Decisions",Metrics!B:B,"Open")
+Overdue Actions
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Actions",Metrics!B:B,"Overdue")
+Tests
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Testing",Metrics!B:B,"Total Tests")
+Defects
+=SUMIFS(Metrics!C:C,Metrics!A:A,"Defects",Metrics!B:B,"Open")
+7. Design Specs
+Element
+Spec
+Colors
+AMETEK Navy (#003366), Steel Blue (#4F81BD), Gray (#58595B), Amber (#FFC000)
+Fonts
+Values: 16pt bold navy, Labels: 8pt gray
+Borders
+Thin gray (#D0D0D0), subtle
+Gridlines
+Hidden
+In-progress shading
+Light amber (#FFF8E1)
+8. What's Still Placeholder (Needs Data Linkage)
+Item
+Status
+What's Needed
+Feeder % Done
+Hard-coded
+Workstream/Phase field in Project Plan
+Feeder Open/Blocked counts
+Hard-coded
+Task filtering by feeder type
+Workstreams column
+Hard-coded
+Task counts by workstream abbreviation
+Testing/Defects
+Shows 0
+Real data source connection
+ITC-specific RAID
+Hard-coded
+Workstream field in RAID sources
+Copy this canvas to your new session and I'll help you wire up the live data connections once your updated file is ready!

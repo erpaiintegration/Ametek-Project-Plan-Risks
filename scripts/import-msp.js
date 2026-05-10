@@ -515,6 +515,207 @@ function parseProjectTeamRoster(filePath) {
   return result;
 }
 
+function normalizePhrase(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s/&-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function containsPhrase(haystack, needle) {
+  const h = normalizePhrase(haystack);
+  const n = normalizePhrase(needle);
+  if (!h || !n) return false;
+
+  if (n.length <= 3) {
+    const re = new RegExp(`\\b${n.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\b`, "i");
+    return re.test(h);
+  }
+
+  return h.includes(n);
+}
+
+function splitDelimited(value) {
+  return String(value || "")
+    .split(/[;,|/]/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function buildAssignmentProfiles(projectTeam, resourceTable) {
+  const profiles = new Map();
+
+  function ensureProfile(name) {
+    const key = normalizeName(name);
+    if (!key) return null;
+    if (!profiles.has(key)) {
+      profiles.set(key, {
+        name: String(name || "").trim(),
+        active: true,
+        workstreams: new Set(),
+        assignmentTerms: new Set(),
+        positionTerms: new Set(),
+        isBpoLike: false
+      });
+    }
+    return profiles.get(key);
+  }
+
+  for (const row of projectTeam.rowsByName.values()) {
+    const p = ensureProfile(row.name);
+    if (!p) continue;
+
+    const status = String(row.values?.Status || "").trim().toLowerCase();
+    if (status && status !== "active") p.active = false;
+
+    const assignment = String(row.values?.["Project Team Assignment"] || "").trim();
+    for (const term of splitDelimited(assignment)) {
+      p.assignmentTerms.add(term);
+      p.workstreams.add(term);
+    }
+
+    const position = String(row.values?.["Project Position"] || "").trim();
+    for (const term of splitDelimited(position)) {
+      p.positionTerms.add(term);
+    }
+
+    if (/\bbpo\b|business process owner/i.test(`${assignment} ${position}`)) {
+      p.isBpoLike = true;
+    }
+  }
+
+  for (const row of resourceTable.rowsByName.values()) {
+    const p = ensureProfile(row.name);
+    if (!p) continue;
+
+    for (const ws of row.workstreams || []) {
+      if (ws) {
+        p.workstreams.add(String(ws).trim());
+      }
+    }
+
+    if (String(row.values?.BPO || "").trim()) {
+      p.isBpoLike = true;
+    }
+  }
+
+  return [...profiles.values()].filter((p) => p.active !== false);
+}
+
+function isWorkingTaskRow(row) {
+  const isSummary = parseBoolYesNo(firstValue(row, "Summary"));
+  const isMilestone = parseBoolYesNo(firstValue(row, "Milestone"));
+  const pct = parseNumber(firstValue(row, "% Complete"));
+  const isDone = pct != null && pct >= 100;
+  const isActiveRaw = firstValue(row, "Active");
+  const isActive = !isActiveRaw || parseBoolYesNo(isActiveRaw);
+  const isPlaceholder = parseBoolYesNo(firstValue(row, "Placeholder"));
+  return !isSummary && !isMilestone && !isDone && isActive && !isPlaceholder;
+}
+
+function pickAssigneesFromDescription(taskText, profiles) {
+  const scored = [];
+
+  for (const p of profiles) {
+    let score = 0;
+
+    if (containsPhrase(taskText, p.name)) score += 12;
+
+    const nameParts = p.name.split(/\s+/).filter((x) => x.length >= 4);
+    for (const np of nameParts) {
+      if (containsPhrase(taskText, np)) score += 4;
+    }
+
+    for (const term of p.workstreams) {
+      if (containsPhrase(taskText, term)) score += 6;
+    }
+    for (const term of p.assignmentTerms) {
+      if (containsPhrase(taskText, term)) score += 5;
+    }
+    for (const term of p.positionTerms) {
+      if (containsPhrase(taskText, term)) score += 2;
+    }
+
+    if (score > 0) {
+      scored.push({ profile: p, score });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.profile.name.localeCompare(b.profile.name));
+  return scored;
+}
+
+function enrichWorkingTasksFromDescription(rows, projectTeam, resourceTable) {
+  const profiles = buildAssignmentProfiles(projectTeam, resourceTable);
+  if (!profiles.length) {
+    return {
+      profiles: 0,
+      rowsConsidered: 0,
+      resourceRowsUpdated: 0,
+      bpoRowsUpdated: 0,
+      workstreamRowsUpdated: 0
+    };
+  }
+
+  let rowsConsidered = 0;
+  let resourceRowsUpdated = 0;
+  let bpoRowsUpdated = 0;
+  let workstreamRowsUpdated = 0;
+
+  for (const row of rows) {
+    if (!isWorkingTaskRow(row)) continue;
+
+    rowsConsidered += 1;
+    const taskText = `${firstValue(row, "Task Name")} ${firstValue(row, "Task description")}`.trim();
+    if (!taskText) continue;
+
+    const matches = pickAssigneesFromDescription(taskText, profiles).slice(0, 6);
+    if (!matches.length) continue;
+
+    const matchedWorkstreams = [...new Set(
+      matches.flatMap((m) => [...m.profile.workstreams]).filter(Boolean)
+    )];
+
+    const resourceNames = [...new Set(
+      matches
+        .filter((m) => !m.profile.isBpoLike)
+        .map((m) => m.profile.name)
+        .filter(Boolean)
+    )];
+
+    const bpoNames = [...new Set(
+      matches
+        .filter((m) => m.profile.isBpoLike)
+        .map((m) => m.profile.name)
+        .filter(Boolean)
+    )];
+
+    if (!firstValue(row, "Resource Names") && resourceNames.length) {
+      row["Resource Names"] = resourceNames.slice(0, 3).join("; ");
+      resourceRowsUpdated += 1;
+    }
+
+    if (!firstValue(row, "Business Validation Owner") && bpoNames.length) {
+      row["Business Validation Owner"] = bpoNames.slice(0, 3).join("; ");
+      bpoRowsUpdated += 1;
+    }
+
+    if (!firstValue(row, TASK_WORKSTREAM_FIELD) && matchedWorkstreams.length) {
+      row[TASK_WORKSTREAM_FIELD] = matchedWorkstreams.slice(0, 2).join("; ");
+      workstreamRowsUpdated += 1;
+    }
+  }
+
+  return {
+    profiles: profiles.length,
+    rowsConsidered,
+    resourceRowsUpdated,
+    bpoRowsUpdated,
+    workstreamRowsUpdated
+  };
+}
+
 function mergeSupplementalIntoBaseRows(baseRows, supplementalByUid) {
   for (const row of baseRows) {
     const uid = parseNumber(firstValue(row, "Unique ID"));
@@ -1057,6 +1258,29 @@ function teamMemberSchemaFromSourceHeaders(resourceHeaders, rosterHeaders) {
   return schema;
 }
 
+function resolveTeamStatusName(rawValue, statusOptions) {
+  const options = (statusOptions || []).map((o) => String(o?.name || "").trim()).filter(Boolean);
+  if (!options.length) return null;
+
+  const raw = String(rawValue || "").trim().toLowerCase();
+  if (!raw) return options[0];
+
+  const exact = options.find((name) => name.toLowerCase() === raw);
+  if (exact) return exact;
+
+  const wantsInactive = /(inactive|roll.?off|offboard|left|former|closed|disabled)/i.test(raw);
+
+  if (wantsInactive) {
+    const inactiveLike = options.find((name) => /(inactive|off|roll|left|former|closed|disabled)/i.test(name));
+    if (inactiveLike) return inactiveLike;
+  } else {
+    const activeLike = options.find((name) => /(active|current|enabled|working|open)/i.test(name));
+    if (activeLike) return activeLike;
+  }
+
+  return options[0];
+}
+
 async function ensureTeamMemberProperties(teamMembersDbId, resourceHeaders, rosterHeaders) {
   const db = await withRetry(
     () => notion.databases.retrieve({ database_id: teamMembersDbId }),
@@ -1167,9 +1391,10 @@ function buildTeamMemberProperties({
       const parsed = parseDateValue(rawValue);
       props[propName] = parsed ? { date: { start: parsed } } : { date: null };
     } else if (schemaType === "status") {
-      const lowered = String(rawValue || "").toLowerCase();
-      const nameValue = lowered.includes("active") ? "Active" : "Inactive";
-      props[propName] = { status: { name: nameValue } };
+      const statusName = resolveTeamStatusName(rawValue, teamDbProperties[propName]?.status?.options || []);
+      if (statusName) {
+        props[propName] = { status: { name: statusName } };
+      }
     } else if (schemaType === "rich_text") {
       props[propName] = { rich_text: richText(rawValue) };
     }
@@ -1361,6 +1586,7 @@ async function main() {
   const resourceTable = parseResourceTable(resourceTableFile);
   const projectTeam = parseProjectTeamRoster(projectTeamFile);
   mergeSupplementalIntoBaseRows(rows, supplementalByUid);
+  const descriptionEnrichment = enrichWorkingTasksFromDescription(rows, projectTeam, resourceTable);
 
   if (!rows.length) {
     throw new Error("CSV contains no data rows.");
@@ -1386,6 +1612,10 @@ async function main() {
   if (projectTeamFile) {
     console.log(`Using project team CSV: ${projectTeamFile}`);
   }
+  console.log(
+    `Description enrichment -> profiles: ${descriptionEnrichment.profiles}, working rows scanned: ${descriptionEnrichment.rowsConsidered}, ` +
+      `Resource rows updated: ${descriptionEnrichment.resourceRowsUpdated}, BPO rows updated: ${descriptionEnrichment.bpoRowsUpdated}, Workstream rows updated: ${descriptionEnrichment.workstreamRowsUpdated}`
+  );
   console.log(`Import version: ${importVersion}`);
 
   await ensureAuditProperties();
@@ -1654,6 +1884,7 @@ async function main() {
       requestDelayMs: REQUEST_DELAY_MS,
       apiTimeoutMs: API_TIMEOUT_MS
     },
+    descriptionEnrichment,
     preflight,
     teamMembers: {
       databaseId: teamMembersDbId,

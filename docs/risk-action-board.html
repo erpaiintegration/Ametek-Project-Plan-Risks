@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Risk &amp; Action Board</title>
+  <style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #f1f5f9;
+  --card: #fff;
+  --txt: #1f2937;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --shadow: 0 1px 4px rgba(0,0,0,0.10);
+  --red:    #dc2626;
+  --amber:  #d97706;
+  --blue:   #2563eb;
+  --green:  #16a34a;
+  --red-bg:    #fee2e2;
+  --amber-bg:  #fef3c7;
+  --blue-bg:   #dbeafe;
+  --green-bg:  #dcfce7;
+}
+html, body { height: 100%; font: 13px/1.5 "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--txt); }
+body { display: flex; flex-direction: column; }
+
+/* ── HEADER ── */
+header {
+  background: linear-gradient(135deg, #0f2137 0%, #1e3a8a 100%);
+  color: #fff;
+  padding: 10px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+header h1 { font-size: 16px; font-weight: 700; letter-spacing: .3px; }
+header .sub { font-size: 10px; opacity: .7; margin-top: 2px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+
+/* ── FILTER BAR ── */
+#filterBar {
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  padding: 6px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+#filterBar label { font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: .3px; }
+#filterBar select, #filterBar input {
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 11px;
+  background: #fff;
+  color: var(--txt);
+}
+#filterBar .counts { margin-left: auto; display: flex; gap: 16px; }
+.count-pill {
+  font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px;
+}
+.pill-critical { background: var(--red-bg); color: var(--red); }
+.pill-action   { background: var(--amber-bg); color: var(--amber); }
+.pill-watch    { background: var(--blue-bg); color: var(--blue); }
+
+/* ── BOARD ── */
+#board {
+  flex: 1;
+  display: flex;
+  gap: 0;
+  padding: 12px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── COLUMN ── */
+.col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0 6px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+}
+.col-head {
+  padding: 10px 14px 8px;
+  font-weight: 800;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.col-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: auto;
+}
+.col-scroll { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+
+/* COLUMN THEMES */
+.col-critical .col-head { background: var(--red-bg); color: var(--red); border-color: #fca5a5; }
+.col-critical .col-count { background: var(--red); color: #fff; }
+.col-critical { border-color: #fca5a5; }
+.col-action .col-head { background: var(--amber-bg); color: #92400e; border-color: #fcd34d; }
+.col-action .col-count { background: var(--amber); color: #fff; }
+.col-action { border-color: #fcd34d; }
+.col-watch .col-head { background: var(--blue-bg); color: #1e3a8a; border-color: #93c5fd; }
+.col-watch .col-count { background: var(--blue); color: #fff; }
+.col-watch { border-color: #93c5fd; }
+
+/* ── CARD ── */
+.card {
+  background: var(--card);
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition: box-shadow .15s;
+  cursor: default;
+  flex-shrink: 0;
+}
+.card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.13); }
+.card-top { padding: 9px 11px 7px; }
+.card-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 5px; }
+.badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.badge-type-sched { background: #fef3c7; color: #92400e; }
+.badge-type-crit  { background: #fee2e2; color: #991b1b; }
+.badge-type-mon   { background: #dbeafe; color: #1e40af; }
+.badge-sev-critical { background: #7f1d1d; color: #fff; }
+.badge-sev-high   { background: #dc2626; color: #fff; }
+.badge-sev-medium { background: #d97706; color: #fff; }
+.badge-sev-low    { background: #6b7280; color: #fff; }
+.badge-cat  { background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; }
+.badge-ws   { background: #f5f3ff; color: #5b21b6; border: 1px solid #ddd6fe; }
+.card-title { font-size: 12px; font-weight: 700; color: var(--txt); line-height: 1.3; margin-bottom: 4px; }
+.card-issue { font-size: 11px; color: #374151; margin-bottom: 6px; line-height: 1.4; }
+.card-meta { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.card-date { font-size: 10px; color: var(--muted); }
+.card-pct  { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; }
+.pct-done   { background: var(--green-bg); color: var(--green); }
+.pct-mid    { background: var(--amber-bg); color: var(--amber); }
+.pct-low    { background: var(--red-bg); color: var(--red); }
+
+/* progress bar */
+.prog-bar { height: 3px; background: #e5e7eb; margin: 5px 0 0; border-radius: 2px; overflow: hidden; }
+.prog-fill { height: 100%; border-radius: 2px; }
+.fill-green { background: var(--green); }
+.fill-amber { background: var(--amber); }
+.fill-red   { background: var(--red); }
+
+/* ── RESOLUTION PANEL ── */
+.resolution {
+  border-top: 1px solid var(--line);
+  background: #f8fafc;
+  padding: 7px 11px 8px;
+}
+.resolution-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.resolution-text {
+  font-size: 11px;
+  color: #374151;
+  line-height: 1.4;
+}
+
+/* severity accent on left border */
+.card.sev-critical { border-left: 4px solid #7f1d1d; }
+.card.sev-high     { border-left: 4px solid var(--red); }
+.card.sev-medium   { border-left: 4px solid var(--amber); }
+.card.sev-low      { border-left: 4px solid #9ca3af; }
+
+/* SCROLLBAR */
+.col-scroll::-webkit-scrollbar { width: 4px; }
+.col-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+
+/* EMPTY STATE */
+.empty-state { text-align: center; padding: 32px 12px; color: var(--muted); font-size: 12px; }
+
+/* ── GROUP CARD ── */
+.group {
+  background: var(--card);
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.group.sev-critical { border-left: 4px solid #7f1d1d; }
+.group.sev-high     { border-left: 4px solid var(--red); }
+.group.sev-medium   { border-left: 4px solid var(--amber); }
+.group.sev-low      { border-left: 4px solid #9ca3af; }
+.group-header {
+  padding: 8px 11px 7px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--line);
+}
+.group-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.group-name { font-size: 12px; font-weight: 800; color: var(--txt); line-height: 1.3; }
+.group-count {
+  font-size: 9px; font-weight: 700;
+  background: #e2e8f0; color: #334155;
+  padding: 2px 7px; border-radius: 999px;
+  white-space: nowrap; flex-shrink: 0; margin-left: 8px;
+}
+.group-body { display: flex; flex-direction: column; }
+
+/* ── SUB-CARD ── */
+.sub-card { border-top: 1px solid var(--line); background: #fff; flex-shrink: 0; }
+.sub-card:first-child { border-top: none; }
+.sub-card-top { padding: 8px 11px 6px 18px; border-left: 3px solid transparent; }
+.sub-card.sev-critical .sub-card-top { border-left-color: #7f1d1d; }
+.sub-card.sev-high .sub-card-top     { border-left-color: var(--red); }
+.sub-card.sev-medium .sub-card-top   { border-left-color: var(--amber); }
+.sub-card.sev-low .sub-card-top      { border-left-color: #9ca3af; }
+.sub-card-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 4px; }
+.sub-title { font-size: 12px; font-weight: 600; color: var(--txt); line-height: 1.3; margin-bottom: 3px; }
+.sub-issue { font-size: 11px; color: #374151; margin-bottom: 5px; line-height: 1.4; }
+.sub-meta  { display: flex; justify-content: space-between; align-items: center; }
+.sub-card .resolution { margin-left: 15px; border-left: 2px solid #e2e8f0; padding-left: 9px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Risk &amp; Action Board</h1>
+    <div class="sub" id="headerSub">Loading…</div>
+  </div>
+  <div class="header-right">
+    <a href="schedule-intelligence-redesigned.html" style="color:#fff;font-size:11px;opacity:.85;text-decoration:none;border:1px solid rgba(255,255,255,.4);padding:4px 10px;border-radius:4px">← Schedule Dashboard</a>
+    <span id="headerDate" style="font-size:10px;opacity:.7"></span>
+  </div>
+</header>
+
+<div id="filterBar">
+  <label>Workstream</label>
+  <select id="wsFilter" onchange="applyFilters()">
+    <option value="">All</option>
+  </select>
+  <label>Type</label>
+  <select id="typeFilter" onchange="applyFilters()">
+    <option value="">All</option>
+    <option value="Schedule Risk">Schedule Risk</option>
+    <option value="Critical Path">Critical Path</option>
+    <option value="Monitor">Monitor</option>
+  </select>
+  <label>Search</label>
+  <input id="searchInput" type="text" placeholder="Task name…" oninput="applyFilters()" style="width:160px">
+  <div class="counts">
+    <span class="count-pill pill-critical" id="cntCritical">— Critical</span>
+    <span class="count-pill pill-action"   id="cntAction">— Action</span>
+    <span class="count-pill pill-watch"    id="cntWatch">— Watch</span>
+  </div>
+</div>
+
+<div id="board">
+  <div class="col col-critical">
+    <div class="col-head">
+      <span>🔴</span> Critical / Immediate Action
+      <span class="col-count" id="colCntCritical">0</span>
+    </div>
+    <div class="col-scroll" id="colCritical"></div>
+  </div>
+  <div class="col col-action">
+    <div class="col-head">
+      <span>🟡</span> Action Required
+      <span class="col-count" id="colCntAction">0</span>
+    </div>
+    <div class="col-scroll" id="colAction"></div>
+  </div>
+  <div class="col col-watch">
+    <div class="col-head">
+      <span>🔵</span> Watch
+      <span class="col-count" id="colCntWatch">0</span>
+    </div>
+    <div class="col-scroll" id="colWatch"></div>
+  </div>
+</div>
+
+<script>
+let DATA = null;
+let taskByUid = new Map();
+let allItems = [];
+
+const RESOLUTIONS = {
+  'Critical Path': {
+    'Critical': 'IMMEDIATE ESCALATION: Task is on critical path with critical severity. Engage sponsor and PMO. Add resources or compress scope NOW.',
+    'High':     'Escalate to project lead. Assign dedicated resources. Review schedule compression options this sprint.',
+    'default':  'On critical path — review task with workstream lead. Any delay extends go-live date.'
+  },
+  'Schedule Risk': {
+    'Critical': 'CRITICAL SLIP: Immediate sponsor escalation required. Baseline deviation is severe. Obtain committed recovery plan by end of day.',
+    'High':     'Escalate to task owner and workstream lead. Request revised commitment date and recovery actions within 48 hours.',
+    'Medium':   'Schedule owner to provide recovery plan at next steering checkpoint. Monitor daily until back on track.',
+    'Low':      'Log in risk register. Task owner to confirm plan holds at next weekly status update.',
+    'default':  'Review with task owner. Obtain revised forecast and document impact assessment.'
+  },
+  'Monitor': {
+    'default':  'No immediate action. Continue weekly monitoring. Escalate if milestone date moves or % complete stalls for 2+ weeks.'
+  },
+  'default': 'Review with workstream lead at next checkpoint and confirm current status and next steps.'
+};
+
+function getResolution(type, severity) {
+  const typeMap = RESOLUTIONS[type] || RESOLUTIONS['default'];
+  if (typeof typeMap === 'string') return typeMap;
+  return typeMap[severity] || typeMap['default'] || RESOLUTIONS['default'];
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('headerDate').textContent = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+  fetch('schedule-intelligence-data.json')
+    .then(r => r.json())
+    .then(data => {
+      DATA = data;
+      buildTaskMap();
+      buildAllItems();
+      populateFilters();
+      applyFilters();
+      document.getElementById('headerSub').textContent =
+        `${DATA.actionItems.length} items · Generated from MS Project · ${DATA.generatedAt ? new Date(DATA.generatedAt).toLocaleDateString() : ''}`;
+    })
+    .catch(err => {
+      document.getElementById('headerSub').textContent = 'Failed to load data: ' + err.message;
+    });
+});
+
+function buildTaskMap() {
+  DATA.tasks.forEach(t => taskByUid.set(String(t.uid), t));
+}
+
+function buildAllItems() {
+  allItems = DATA.actionItems.map(a => {
+    const task = taskByUid.get(String(a.taskId)) || {};
+    return {
+      taskId:       a.taskId,
+      lane:         a.attentionLane,
+      severity:     a.severity,
+      type:         a.type,
+      category:     a.category,
+      issueText:    a.name,
+      title:        a.title || task.name || 'Unnamed Task',
+      summaryName:  task.summaryName || '',
+      milestoneDate: a.milestoneDate,
+      workstream:   task.workstream || '',
+      percentComplete: task.percentComplete != null ? task.percentComplete : null,
+      status:       task.status || '',
+      wbs:          task.wbs || '',
+      criticalFlag: task.criticalFlag || false,
+      resolution:   getResolution(a.type, a.severity)
+    };
+  });
+}
+
+function populateFilters() {
+  const wsSet = new Set(allItems.map(i => i.workstream).filter(Boolean).sort());
+  const sel = document.getElementById('wsFilter');
+  wsSet.forEach(ws => {
+    const opt = document.createElement('option');
+    opt.value = ws; opt.textContent = ws;
+    sel.appendChild(opt);
+  });
+}
+
+function applyFilters() {
+  const ws   = document.getElementById('wsFilter').value;
+  const type = document.getElementById('typeFilter').value;
+  const q    = document.getElementById('searchInput').value.trim().toLowerCase();
+
+  const filtered = allItems.filter(i => {
+    if (ws   && i.workstream !== ws) return false;
+    if (type && i.type       !== type) return false;
+    if (q    && !i.title.toLowerCase().includes(q) && !i.issueText.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const critical = filtered.filter(i => i.lane === 'Act Now');
+  const action   = filtered.filter(i => i.lane === 'At Risk Soon');
+  const watch    = filtered.filter(i => i.lane === 'Watchlist');
+
+  renderColumn('colCritical', 'colCntCritical', 'cntCritical', critical, '— Critical');
+  renderColumn('colAction',   'colCntAction',   'cntAction',   action,   '— Action');
+  renderColumn('colWatch',    'colCntWatch',     'cntWatch',    watch,    '— Watch');
+}
+
+function renderColumn(colId, countId, pillId, items, pillSuffix) {
+  const col  = document.getElementById(colId);
+  const cnt  = document.getElementById(countId);
+  const pill = document.getElementById(pillId);
+
+  cnt.textContent  = items.length;
+  pill.textContent = `${items.length} ${pillSuffix.split(' ').slice(1).join(' ')}`;
+
+  if (!items.length) {
+    col.innerHTML = '<div class="empty-state">No items in this category</div>';
+    return;
+  }
+
+  col.innerHTML = buildGroupedCards(items);
+}
+
+function buildGroupedCards(items) {
+  const sevOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+  const groupMap = new Map();
+  items.forEach(i => {
+    const key = i.summaryName || i.title;
+    if (!groupMap.has(key)) groupMap.set(key, []);
+    groupMap.get(key).push(i);
+  });
+  const sorted = [...groupMap.entries()].sort(([, a], [, b]) => {
+    const aW = Math.min(...a.map(i => sevOrder[(i.severity||'low').toLowerCase()] ?? 99));
+    const bW = Math.min(...b.map(i => sevOrder[(i.severity||'low').toLowerCase()] ?? 99));
+    if (aW !== bW) return aW - bW;
+    return b.length - a.length;
+  });
+  return sorted.map(([key, children]) => buildGroupCard(key, children)).join('');
+}
+
+function buildGroupCard(groupName, children) {
+  const sevOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+  const worstRank = Math.min(...children.map(i => sevOrder[(i.severity||'low').toLowerCase()] ?? 99));
+  const worstSev = ['critical','high','medium','low'][worstRank] || 'low';
+  const count = children.length;
+  const ws = [...new Set(children.map(i => i.workstream).filter(Boolean))].join(', ');
+  const wsBadge = ws ? `<span class="badge badge-ws">${esc(ws)}</span>` : '';
+  const subCards = children.map(i => buildSubCard(i)).join('');
+  return `<div class="group sev-${worstSev}">
+  <div class="group-header">
+    <div class="group-header-top">
+      <span class="group-name">${esc(groupName)}</span>
+      ${count > 1 ? `<span class="group-count">${count} tasks</span>` : ''}
+    </div>
+    ${wsBadge}
+  </div>
+  <div class="group-body">${subCards}</div>
+</div>`;
+}
+
+function buildSubCard(i) {
+  const pct = i.percentComplete;
+  const pctDisplay = pct != null ? pct + '%' : '—';
+  const pctClass = pct == null ? '' : pct >= 75 ? 'pct-done' : pct >= 40 ? 'pct-mid' : 'pct-low';
+  const fillClass = pct == null ? 'fill-amber' : pct >= 75 ? 'fill-green' : pct >= 40 ? 'fill-amber' : 'fill-red';
+  const sevClass  = 'sev-' + (i.severity || 'low').toLowerCase();
+  const sevBadgeClass = 'badge-sev-' + (i.severity || 'low').toLowerCase();
+  const typeClass = i.type === 'Schedule Risk' ? 'badge-type-sched' : i.type === 'Critical Path' ? 'badge-type-crit' : 'badge-type-mon';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const mDate = i.milestoneDate ? new Date(i.milestoneDate + 'T00:00:00') : null;
+  const overdue = mDate && mDate < today;
+  const dateStr = mDate ? mDate.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+  const dateStyle = overdue ? 'color:#dc2626;font-weight:700' : '';
+  return `<div class="sub-card ${sevClass}">
+  <div class="sub-card-top">
+    <div class="sub-card-badges">
+      <span class="badge ${typeClass}">${esc(i.type)}</span>
+      <span class="badge ${sevBadgeClass}">${esc(i.severity)}</span>
+    </div>
+    <div class="sub-title">${esc(i.title)}</div>
+    <div class="sub-issue">${esc(i.issueText)}</div>
+    <div class="sub-meta">
+      ${dateStr ? `<span class="card-date" style="${dateStyle}">\u{1F4C5} ${dateStr}${overdue ? ' \u26A0' : ''}</span>` : ''}
+      ${pct != null ? `<span class="card-pct ${pctClass}">${pctDisplay}</span>` : ''}
+    </div>
+    ${pct != null ? `<div class="prog-bar"><div class="prog-fill ${fillClass}" style="width:${pct}%"></div></div>` : ''}
+  </div>
+  <div class="resolution">
+    <div class="resolution-label">Resolution / Next Steps</div>
+    <div class="resolution-text">${esc(i.resolution)}</div>
+  </div>
+</div>`;
+}
+
+function buildCard(i) {
+  const pct = i.percentComplete;
+  const pctDisplay = pct != null ? pct + '%' : '—';
+  const pctClass = pct == null ? '' : pct >= 75 ? 'pct-done' : pct >= 40 ? 'pct-mid' : 'pct-low';
+  const fillClass = pct == null ? 'fill-amber' : pct >= 75 ? 'fill-green' : pct >= 40 ? 'fill-amber' : 'fill-red';
+  const sevClass = 'sev-' + (i.severity || 'low').toLowerCase();
+
+  const typeClass  = i.type === 'Schedule Risk' ? 'badge-type-sched'
+                   : i.type === 'Critical Path' ? 'badge-type-crit'
+                   : 'badge-type-mon';
+  const sevBadgeClass = 'badge-sev-' + (i.severity || 'low').toLowerCase().replace(' ','');
+
+  const dateStr = i.milestoneDate
+    ? new Date(i.milestoneDate + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+    : '';
+
+  // Check if overdue
+  const today = new Date(); today.setHours(0,0,0,0);
+  const mDate = i.milestoneDate ? new Date(i.milestoneDate + 'T00:00:00') : null;
+  const overdue = mDate && mDate < today;
+  const dateStyle = overdue ? 'color:#dc2626;font-weight:700' : '';
+
+  const wsBadge = i.workstream ? `<span class="badge badge-ws">${esc(i.workstream)}</span>` : '';
+  const catBadge = i.category  ? `<span class="badge badge-cat">${esc(i.category)}</span>` : '';
+
+  return `<div class="card ${sevClass}">
+  <div class="card-top">
+    <div class="card-badges">
+      <span class="badge ${typeClass}">${esc(i.type)}</span>
+      <span class="badge ${sevBadgeClass}">${esc(i.severity)}</span>
+      ${catBadge}${wsBadge}
+    </div>
+    <div class="card-title">${esc(i.title)}</div>
+    <div class="card-issue">${esc(i.issueText)}</div>
+    <div class="card-meta">
+      <span class="card-date" style="${dateStyle}">📅 ${dateStr}${overdue ? ' ⚠ Overdue' : ''}</span>
+      ${pct != null ? `<span class="card-pct ${pctClass}">${pctDisplay}</span>` : ''}
+    </div>
+    ${pct != null ? `<div class="prog-bar"><div class="prog-fill ${fillClass}" style="width:${pct}%"></div></div>` : ''}
+  </div>
+  <div class="resolution">
+    <div class="resolution-label">Resolution / Next Steps</div>
+    <div class="resolution-text">${esc(i.resolution)}</div>
+  </div>
+</div>`;
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

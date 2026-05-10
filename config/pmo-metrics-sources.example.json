@@ -1,0 +1,175 @@
+{
+  "contract_mode": "hybrid",
+  "metrics_workbook_name": "Ametek PMO Metrics.xlsx",
+  "export_tables_csv": false,
+  "output_dir": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\Ametek SAP S4 Daily Report",
+  "source_catalog": [
+    {
+      "name": "testing_defects_book",
+      "path_glob": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\Ametek SAP S4 Daily Report\\**\\SAP S_4HANA Implementation-Test Execution and Defects-*.xls*",
+      "pick": "latest",
+      "auto_manage_duplicates": true,
+      "restore_latest_from_archive": true,
+      "restore_dir": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\Ametek SAP S4 Daily Report",
+      "archive_older_matches": true,
+      "duplicates_archive_folder": "archive_dedup",
+      "header_row": 1,
+      "read_all_sheets": true,
+      "required": false,
+      "include_sheet_patterns": [
+        "ITC",
+        "UAT",
+        "GO[- ]?LIVE",
+        "RL"
+      ]
+    }
+  ],
+  "domains": [
+    {
+      "name": "testing_defects",
+      "enabled": true,
+      "validation_section_title": "Testing/Defect Metrics",
+      "builder": "testing_defects",
+      "source_names": [
+        "testing_defects_book"
+      ],
+      "section_patterns": {
+        "ITC1": [
+          "\\bitc\\s*1\\b",
+          "\\bitc1\\b"
+        ],
+        "ITC2": [
+          "\\bitc\\s*2\\b",
+          "\\bitc2\\b"
+        ],
+        "ITC3": [
+          "\\bitc\\s*3\\b",
+          "\\bitc3\\b"
+        ],
+        "UAT": [
+          "\\buat\\b",
+          "user\\s*accept"
+        ],
+        "GO-LIVE": [
+          "go\\s*-?\\s*live",
+          "hypercare",
+          "cutover"
+        ]
+      },
+      "aliases": {
+        "test_id": [
+          "ID",
+          "Test ID",
+          "Script ID"
+        ],
+        "test_name": [
+          "Name",
+          "Test Name",
+          "Scenario"
+        ],
+        "status": [
+          "Status",
+          "Result",
+          "Execution Status"
+        ],
+        "workstream": [
+          "Directory",
+          "Workstream",
+          "Task Summary Name"
+        ],
+        "owner": [
+          "Tester",
+          "Owner",
+          "Assigned To"
+        ],
+        "cycle": [
+          "Cycle",
+          "Test Cycle",
+          "Wave"
+        ],
+        "task_id": [
+          "Task ID",
+          "WBS",
+          "Unique ID"
+        ],
+        "task_name": [
+          "Task Name",
+          "Business Process",
+          "Name"
+        ],
+        "planned_date": [
+          "Planned Start Date",
+          "Planned Date"
+        ],
+        "executed_date": [
+          "Executed Start",
+          "Execution Date"
+        ],
+        "defect_id": [
+          "Defect ID",
+          "Associated Defect ID"
+        ],
+        "defect_count": [
+          "# of Associated Defects",
+          "Associated Defects"
+        ],
+        "defects_new": [
+          "New"
+        ],
+        "defects_in_progress": [
+          "In Progress"
+        ],
+        "defects_closed": [
+          "Closed"
+        ]
+      },
+      "validation": {
+        "pq_docs": {
+          "PQ_TD_Source": {
+            "purpose": "Raw ingest for testing/defect source workbook and selected sheets.",
+            "dependencies": "testing_defects_book source, include_sheet_patterns, header row",
+            "notes": "Reference-only PQ used for traceability and troubleshooting."
+          },
+          "PQ_TD_Detail": {
+            "purpose": "Canonical row-level testing/defect table with helper flags and link key.",
+            "dependencies": "PQ_TD_Source + alias mapping + section classification logic",
+            "notes": "Feeds summary/workstream rollups and future cross-domain linking."
+          },
+          "PQ_TD_Summary": {
+            "purpose": "Section-level and ALL-level testing/defect aggregate metrics.",
+            "dependencies": "PQ_TD_Detail",
+            "notes": "Primary validation rollup for section totals and rates."
+          },
+          "PQ_TD_Workstream": {
+            "purpose": "Workstream and owner drilldown for testing/defect domain.",
+            "dependencies": "PQ_TD_Detail",
+            "notes": "Supports detailed validation by workstream and user."
+          }
+        },
+        "metric_logic": {
+          "PQ_TD_Detail": {
+            "Section": "Regex classification using source sheet, cycle, task and test text.",
+            "MilestoneLinkKey": "TaskID if present, otherwise TaskName.",
+            "HasDefectLink": "DefectCount > 0 OR DefectID present OR (DefectsNew + DefectsInProgress + DefectsClosed) > 0.",
+            "IsPassed": "Status contains 'pass'.",
+            "IsFailed": "Status contains 'fail'.",
+            "IsBlocked": "Status contains 'block'.",
+            "IsNA": "Status contains 'not applicable' or 'n/a'."
+          },
+          "PQ_TD_Summary": {
+            "TotalTests": "Count of detail rows in grouping.",
+            "ExecutableTests": "TotalTests - TestsNA.",
+            "PassRatePct": "(TestsPassed / ExecutableTests) * 100.",
+            "FailRatePct": "(TestsFailed / ExecutableTests) * 100.",
+            "BlockedRatePct": "(TestsBlocked / ExecutableTests) * 100."
+          },
+          "PQ_TD_Workstream": {
+            "TotalTests": "Count of detail rows by Section + Workstream (+Owner).",
+            "PassRatePct": "(TestsPassed / ExecutableTests) * 100 by grouping.",
+            "DefectRefs": "Sum of DefectCount by grouping."
+          }
+        }
+      }
+    }
+  ]
+}

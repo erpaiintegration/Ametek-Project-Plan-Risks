@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Critical Path &amp; Driver Analysis — AMETEK SAP S/4</title>
+  <style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --red:#dc2626; --amber:#d97706; --blue:#2563eb; --green:#16a34a; --purple:#7c3aed;
+  --red-bg:#fee2e2; --amber-bg:#fef3c7; --blue-bg:#dbeafe; --green-bg:#dcfce7; --purple-bg:#ede9fe;
+  --line:#e5e7eb; --txt:#1f2937; --muted:#6b7280; --card:#fff; --bg:#f1f5f9;
+}
+html,body { height:100%; font:13px/1.5 "Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--txt); }
+body { display:flex; flex-direction:column; }
+
+header {
+  background:linear-gradient(135deg,#0f2137 0%,#1e3a8a 100%);
+  color:#fff; padding:10px 20px;
+  display:flex; justify-content:space-between; align-items:center; flex-shrink:0;
+}
+header h1 { font-size:16px; font-weight:700; }
+header .sub { font-size:10px; opacity:.7; margin-top:2px; }
+.nav-links { display:flex; gap:8px; }
+.nav-links a { color:#fff; font-size:11px; opacity:.85; text-decoration:none; border:1px solid rgba(255,255,255,.4); padding:4px 10px; border-radius:4px; }
+
+/* KPI STRIP */
+.kpi-strip {
+  display:flex; gap:0; border-bottom:1px solid var(--line); background:#fff; flex-shrink:0;
+}
+.kpi {
+  flex:1; padding:10px 16px; border-right:1px solid var(--line); text-align:center;
+}
+.kpi:last-child { border-right:none; }
+.kpi-val { font-size:22px; font-weight:800; line-height:1; margin-bottom:3px; }
+.kpi-lbl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; }
+.kpi-sub { font-size:10px; margin-top:3px; }
+.red { color:var(--red); } .amber { color:var(--amber); } .green { color:var(--green); } .blue { color:var(--blue); }
+
+/* LAYOUT */
+.page { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:16px; }
+
+/* SECTION */
+.section { background:var(--card); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.section-head {
+  padding:10px 16px; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; gap:8px; font-weight:800; font-size:13px;
+}
+.section-body { padding:16px; }
+
+/* GATEWAY CHAIN */
+.gateway-chain {
+  display:flex; align-items:stretch; gap:0; overflow-x:auto;
+}
+.gate {
+  flex:1; min-width:160px; padding:12px 14px;
+  border-right:1px solid var(--line); position:relative;
+}
+.gate:last-child { border-right:none; }
+.gate-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin-bottom:6px; }
+.gate-name { font-size:12px; font-weight:800; color:var(--txt); margin-bottom:8px; }
+.gate-date { font-size:11px; margin-bottom:2px; }
+.gate-meta { font-size:10px; color:var(--muted); }
+.gate-slip { font-size:10px; font-weight:700; margin-top:4px; padding:2px 6px; border-radius:4px; display:inline-block; }
+.slip-neg { background:var(--green-bg); color:var(--green); }
+.slip-pos { background:var(--red-bg); color:var(--red); }
+.slip-zero { background:#f1f5f9; color:var(--muted); }
+.gate-pct-bar { height:4px; background:#e5e7eb; border-radius:2px; margin-top:8px; overflow:hidden; }
+.gate-pct-fill { height:100%; border-radius:2px; }
+.gate-arrow {
+  position:absolute; right:-13px; top:50%; transform:translateY(-50%);
+  width:26px; height:26px; background:var(--card); border:2px solid var(--line);
+  border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:11px; z-index:1;
+}
+.gate-red { border-top:3px solid var(--red); }
+.gate-amber { border-top:3px solid var(--amber); }
+.gate-green { border-top:3px solid var(--green); }
+
+/* DRIVER TABLE */
+.driver-table { width:100%; border-collapse:collapse; font-size:11px; }
+.driver-table th { text-align:left; padding:6px 10px; border-bottom:2px solid var(--line); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--muted); background:#f8fafc; }
+.driver-table td { padding:7px 10px; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+.driver-table tr:last-child td { border-bottom:none; }
+.driver-table tr:hover td { background:#f8fafc; }
+.badge { font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px; text-transform:uppercase; white-space:nowrap; }
+.badge-red { background:var(--red-bg); color:var(--red); }
+.badge-amber { background:var(--amber-bg); color:#92400e; }
+.badge-blue { background:var(--blue-bg); color:#1e40af; }
+.badge-green { background:var(--green-bg); color:var(--green); }
+.badge-purple { background:var(--purple-bg); color:var(--purple); }
+.badge-gray { background:#f1f5f9; color:var(--muted); }
+.wbs { font-size:10px; color:var(--muted); font-family:monospace; }
+.task-name { font-weight:600; color:var(--txt); }
+
+/* CONSTRAINT ANALYSIS */
+.constr-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.constr-card { padding:12px 14px; border-radius:6px; border:1px solid var(--line); }
+.constr-count { font-size:28px; font-weight:800; }
+.constr-type { font-size:11px; font-weight:700; margin-top:4px; }
+.constr-desc { font-size:10px; color:var(--muted); margin-top:4px; }
+.constr-risk { font-size:10px; font-weight:700; margin-top:6px; padding:3px 8px; border-radius:4px; display:inline-block; }
+
+/* WORKSTREAM RISK */
+.ws-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:10px; }
+.ws-card { padding:12px 14px; border-radius:6px; border:1px solid var(--line); background:#f8fafc; }
+.ws-name { font-size:12px; font-weight:800; margin-bottom:8px; }
+.ws-stat { display:flex; justify-content:space-between; font-size:11px; margin-bottom:3px; }
+.ws-bar { height:6px; background:#e5e7eb; border-radius:3px; margin-top:6px; overflow:hidden; display:flex; }
+.ws-seg-neg { background:var(--red); }
+.ws-seg-zero { background:var(--amber); }
+.ws-seg-near { background:#fbbf24; }
+.ws-seg-ok { background:var(--green); }
+
+/* RESOLUTION PANEL */
+.resolution-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.res-card { padding:14px 16px; border-radius:6px; border-left:4px solid; border:1px solid var(--line); border-left-width:4px; }
+.res-card.priority-1 { border-left-color:var(--red); }
+.res-card.priority-2 { border-left-color:var(--amber); }
+.res-card.priority-3 { border-left-color:var(--blue); }
+.res-card.priority-4 { border-left-color:var(--green); }
+.res-priority { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin-bottom:4px; }
+.res-title { font-size:13px; font-weight:800; margin-bottom:6px; }
+.res-desc { font-size:11px; color:#374151; line-height:1.5; margin-bottom:10px; }
+.res-impact { font-size:11px; }
+.res-action { margin-top:8px; padding:8px 10px; background:#f8fafc; border-radius:4px; border:1px solid var(--line); }
+.res-action-title { font-size:9px; font-weight:700; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+.res-action li { font-size:11px; color:#374151; margin-left:14px; margin-bottom:3px; }
+
+/* RISK HEAT */
+.heat-table { width:100%; border-collapse:collapse; font-size:11px; }
+.heat-table th,td { padding:7px 12px; text-align:left; border:1px solid var(--line); }
+.heat-table th { background:#f8fafc; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--muted); }
+.heat-r { background:#fee2e2; color:#991b1b; font-weight:700; }
+.heat-a { background:#fef3c7; color:#92400e; font-weight:700; }
+.heat-g { background:#dcfce7; color:#166534; font-weight:700; }
+
+.prog-bar { height:4px; background:#e5e7eb; border-radius:2px; overflow:hidden; display:inline-block; width:60px; vertical-align:middle; margin-left:4px; }
+.prog-fill { height:100%; background:var(--blue); border-radius:2px; }
+
+footer { text-align:center; font-size:10px; color:var(--muted); padding:8px; border-top:1px solid var(--line); background:#fff; flex-shrink:0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Critical Path &amp; Driver Analysis</h1>
+    <div class="sub">AMETEK SAP S/4 · April 29th Full Replan (Approved) · Logic &amp; dependency audit · May 6, 2026</div>
+  </div>
+  <div class="nav-links">
+    <a href="schedule-intelligence-redesigned.html">← Schedule Dashboard</a>
+    <a href="risk-action-board.html">Risk Board</a>
+  </div>
+</header>
+
+<!-- KPI STRIP -->
+<div class="kpi-strip">
+  <div class="kpi">
+    <div class="kpi-val blue">Oct 22</div>
+    <div class="kpi-lbl">Approved Go-Live Date</div>
+    <div class="kpi-sub blue">Current replan target</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-val amber">236</div>
+    <div class="kpi-lbl">Hard Constraints in Plan</div>
+    <div class="kpi-sub amber">131 SNET · 98 FNET · 9 MSO · 1 SNLT</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-val red">4</div>
+    <div class="kpi-lbl">Future/Open Link Rule Violations</div>
+    <div class="kpi-sub red">FS/SS rules not satisfied by dates</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-val amber">8</div>
+    <div class="kpi-lbl">Explicit Lag Links</div>
+    <div class="kpi-sub amber">7 positive, 1 negative lag</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-val green">0</div>
+    <div class="kpi-lbl">Broken Links / Cycles Found</div>
+    <div class="kpi-sub green">0 malformed · 0 missing · 0 cycles</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-val red">2</div>
+    <div class="kpi-lbl">High-Impact Date Conflicts</div>
+    <div class="kpi-sub red">Test Kickoff links in ITC-2 and UAT</div>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- GATEWAY CHAIN -->
+  <div class="section">
+    <div class="section-head">
+      <span>🔗</span> Schedule Gateway Chain — Project Spine
+      <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--muted)">Each gate must complete before the next phase can start</span>
+    </div>
+    <div class="section-body" style="padding:0">
+      <div class="gateway-chain">
+
+        <div class="gate gate-green">
+          <div class="gate-label">Gate 1 · ITC-1 ✅</div>
+          <div class="gate-name">QS5 ITC-1 Refresh</div>
+          <div class="gate-date"><strong>Complete</strong></div>
+          <div class="gate-meta">100% done</div>
+          <div class="gate-slip slip-zero">Complete</div>
+          <div class="gate-pct-bar"><div class="gate-pct-fill" style="width:100%;background:var(--green)"></div></div>
+          <div class="gate-arrow">→</div>
+        </div>
+
+        <div class="gate gate-red">
+          <div class="gate-label">Gate 2 · ITC-2 🔴 NOW</div>
+          <div class="gate-name">QS4 ITC-2 Refresh</div>
+          <div class="gate-date"><strong>Finish:</strong> May 14, 2026</div>
+          <div class="gate-meta">Approved window: Apr 27–May 14</div>
+          <div class="gate-slip slip-zero">Window-controlled by hard dates</div>
+          <div class="gate-meta" style="margin-top:4px">Slack: <strong class="red">-8.2d</strong> · <strong>31% done</strong></div>
+          <div class="gate-pct-bar"><div class="gate-pct-fill" style="width:31%;background:var(--amber)"></div></div>
+          <div class="gate-arrow">→</div>
+        </div>
+
+        <div class="gate gate-red">
+          <div class="gate-label">Gate 3 · ITC-3 🔴 CRITICAL</div>
+          <div class="gate-name">QS5 ITC-3 Refresh</div>
+          <div class="gate-date"><strong>Finish:</strong> Jun 1, 2026</div>
+          <div class="gate-meta">Approved window: May 18–May 29</div>
+          <div class="gate-slip slip-zero">Window-controlled by hard dates</div>
+          <div class="gate-meta" style="margin-top:4px">Slack: <strong class="red">-27.2d</strong> · <strong>0% done</strong></div>
+          <div class="gate-pct-bar"><div class="gate-pct-fill" style="width:0%;background:var(--red)"></div></div>
+          <div class="gate-arrow">→</div>
+        </div>
+
+        <div class="gate gate-red">
+          <div class="gate-label">Gate 4 · UAT 🔴 CRITICAL</div>
+          <div class="gate-name">QS4 UAT Refresh</div>
+          <div class="gate-date"><strong>Finish:</strong> Jun 26, 2026</div>
+          <div class="gate-meta">Approved window: Jun 8–Jun 24</div>
+          <div class="gate-slip slip-zero">Window-controlled by hard dates</div>
+          <div class="gate-meta" style="margin-top:4px">Slack: <strong class="red">-35.3d</strong> · <strong>0% done</strong></div>
+          <div class="gate-pct-bar"><div class="gate-pct-fill" style="width:0%;background:var(--red)"></div></div>
+          <div class="gate-arrow">→</div>
+        </div>
+
+        <div class="gate gate-red">
+          <div class="gate-label">Gate 5 · PROD 🔴</div>
+          <div class="gate-name">Production Build</div>
+          <div class="gate-date"><strong>Finish:</strong> Sep 8, 2026</div>
+          <div class="gate-meta">Must Start On: Sep 8</div>
+          <div class="gate-slip slip-zero">Hard constraint</div>
+          <div class="gate-meta" style="margin-top:4px">Slack: <strong class="red">0d</strong> · <strong>0% done</strong></div>
+          <div class="gate-pct-bar"><div class="gate-pct-fill" style="width:0%;background:var(--red)"></div></div>
+          <div class="gate-arrow">→</div>
+        </div>
+
+        <div class="gate gate-amber">
+          <div class="gate-label">Gate 6 · GO-LIVE 🟡</div>
+          <div class="gate-name">Go-Live</div>
+          <div class="gate-date"><strong>Finish:</strong> Oct 22, 2026</div>
+          <div class="gate-meta">Approved release milestone</div>
+          <div class="gate-slip slip-zero">Constraint-governed</div>
+          <div class="gate-meta" style="margin-top:4px">Slack: <strong class="amber">0d</strong> · <strong>0% done</strong></div>
+          <div class="gate-pct-bar"><div class="gate-pct-fill" style="width:0%;background:var(--amber)"></div></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- DRIVER ANALYSIS -->
+  <div class="section">
+    <div class="section-head">
+      <span>⚡</span> Schedule Drivers — Top Blocking Tasks
+      <span style="margin-left:auto;font-size:10px;font-weight:400;color:var(--muted)">Tasks with the most downstream dependencies and/or highest negative slack</span>
+    </div>
+    <div class="section-body" style="padding:0">
+      <table class="driver-table">
+        <thead>
+          <tr>
+            <th>Priority</th>
+            <th>WBS / Task</th>
+            <th>Workstream</th>
+            <th>Finish</th>
+            <th>% Done</th>
+            <th>Slack</th>
+            <th>Downstream</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="driverBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- DEPENDENCY AUDIT -->
+  <div class="section">
+    <div class="section-head"><span>🧪</span> Dependency &amp; Lag Integrity Audit (Current Replan)</div>
+    <div class="section-body">
+      <table class="driver-table">
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>Result</th>
+            <th>Finding</th>
+            <th>Recommendation (No edits made)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Malformed predecessor tokens</td>
+            <td><span class="badge badge-green">PASS</span></td>
+            <td>0 malformed tokens across all 2,219 tasks</td>
+            <td>None required</td>
+          </tr>
+          <tr>
+            <td>Broken predecessor links</td>
+            <td><span class="badge badge-green">PASS</span></td>
+            <td>0 missing predecessor IDs after correct ID→UID parsing</td>
+            <td>None required</td>
+          </tr>
+          <tr>
+            <td>Circular dependencies</td>
+            <td><span class="badge badge-green">PASS</span></td>
+            <td>0 cycles found in dependency graph</td>
+            <td>None required</td>
+          </tr>
+          <tr>
+            <td>Future/open date rule violations</td>
+            <td><span class="badge badge-red">REVIEW</span></td>
+            <td>4 violations (2 major, 2 minor) where FS/SS rule and date windows conflict</td>
+            <td>Review these four links in MS Project with PMO before changing any dates or link types</td>
+          </tr>
+          <tr>
+            <td>Lag usage sanity</td>
+            <td><span class="badge badge-amber">REVIEW</span></td>
+            <td>8 explicit lag links total (7 positive, 1 negative); no extreme lag values</td>
+            <td>Confirm negative lag on ITC-1 Gate Review is intentional</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:10px;font-size:11px;color:#374151">
+        <strong>High-impact links to validate first:</strong> WBS <span class="wbs">1.3.3.6.6</span> (Test Kickoff vs TRR ITC-2),
+        WBS <span class="wbs">1.3.3.8.5</span> (Test Kickoff vs TRR UAT),
+        WBS <span class="wbs">1.3.3.5.6</span> (ITC-1 Gate Review FS-3d),
+        WBS <span class="wbs">1.3.3.8.7</span> (Defect Correction SS+3d).
+      </div>
+    </div>
+  </div>
+
+  <!-- CONSTRAINT ANALYSIS -->
+  <div class="section">
+    <div class="section-head"><span>🔒</span> Hard Constraint Analysis</div>
+    <div class="section-body">
+      <div class="constr-grid">
+        <div class="constr-card" style="border-top:3px solid var(--amber)">
+          <div class="constr-count amber">131</div>
+          <div class="constr-type">Start No Earlier Than (SNET)</div>
+          <div class="constr-desc">Task cannot start before a fixed date regardless of when its predecessors finish. Can create artificial float or block early start.</div>
+          <div class="constr-risk" style="background:var(--amber-bg);color:#92400e">⚠ Medium Risk — Review each</div>
+        </div>
+        <div class="constr-card" style="border-top:3px solid var(--amber)">
+          <div class="constr-count amber">98</div>
+          <div class="constr-type">Finish No Earlier Than (FNET)</div>
+          <div class="constr-desc">Task cannot finish before a fixed date. Often used on deliverables with hard external deadlines. Can mask real schedule compression.</div>
+          <div class="constr-risk" style="background:var(--amber-bg);color:#92400e">⚠ Medium Risk — Validate dates</div>
+        </div>
+        <div class="constr-card" style="border-top:3px solid var(--red)">
+          <div class="constr-count red">9</div>
+          <div class="constr-type">Must Start On (MSO)</div>
+          <div class="constr-desc">Rigidly pins task to a specific start date. These appear to be deliberate steering dates for refresh and release windows.</div>
+          <div class="constr-risk" style="background:var(--blue-bg);color:var(--blue)">🔵 Governance Control — Keep unless PMO approves change</div>
+        </div>
+        <div class="constr-card" style="border-top:3px solid var(--blue)">
+          <div class="constr-count blue">1</div>
+          <div class="constr-type">Start No Later Than (SNLT)</div>
+          <div class="constr-desc">PMO Authorization task (WBS 1.2.4.1) must start by Jun 22. This gates the entire UAT data load phase for all workstreams.</div>
+          <div class="constr-risk" style="background:var(--blue-bg);color:var(--blue)">🔵 Key Gate — Keep, but track</div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px; padding:12px 14px; background:#fff7ed; border:1px solid #fed7aa; border-radius:6px; border-left:4px solid var(--amber)">
+        <strong style="font-size:12px; color:#92400e">⚠ Interpretation note for this page</strong>
+        <p style="font-size:11px; color:#374151; margin-top:6px; line-height:1.6">
+          This view treats the approved replan dates and hard constraints as authoritative. 
+          It does <strong>not</strong> use baseline slippage as a risk signal. 
+          Focus is on dependency integrity, link logic consistency, and whether current date windows satisfy predecessor rules.
+        </p>
+      </div>
+
+      <!-- MSO detail -->
+      <div style="margin-top:12px">
+        <div style="font-size:11px;font-weight:700;margin-bottom:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">Must Start On — All 9 Tasks</div>
+        <table class="driver-table">
+          <thead>
+            <tr><th>WBS</th><th>Task</th><th>Pinned Date</th><th>% Done</th><th>Slack</th><th>Recommendation</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="wbs">1.1.1.6.1.1</td><td class="task-name">System Refresh Basis (ITC-3 / QS5)</td><td>May 20, 2026</td><td>0%</td><td class="green">0d</td><td><span class="badge badge-green">Keep</span> Aligns with ITC-3 window</td></tr>
+            <tr><td class="wbs">1.1.1.7.1.1</td><td class="task-name">System Refresh Basis (UAT / QS4)</td><td>Jun 9, 2026</td><td>0%</td><td class="green">0d</td><td><span class="badge badge-green">Keep</span> Aligns with UAT window</td></tr>
+            <tr><td class="wbs">1.1.1.8.1.1</td><td class="task-name">System Refresh Basis (Prod / PS4)</td><td>Sep 8, 2026</td><td>0%</td><td class="green">0d</td><td><span class="badge badge-green">Keep</span> Aligns with Prod build window</td></tr>
+            <tr><td class="wbs">1.1.2.8.1</td><td class="task-name">Production Deployment</td><td>Oct 9, 2026</td><td>0%</td><td class="green">12d</td><td><span class="badge badge-green">Keep</span> Has 12d buffer to Go-Live</td></tr>
+            <tr><td class="wbs">1.2.2.1</td><td class="task-name">PMO Authorization to Start Data Loads (ITC-2)</td><td>May 18, 2026</td><td>0%</td><td class="green">0d</td><td><span class="badge badge-amber">Review</span> 12 days away — confirm PMO is ready</td></tr>
+            <tr><td class="wbs">1.2.3.1</td><td class="task-name">PMO Authorization to Start Data Loads (ITC-3)</td><td>Jun 8, 2026</td><td>0%</td><td class="green">0d</td><td><span class="badge badge-blue">Watch</span> Depends on ITC-2 completion</td></tr>
+            <tr><td class="wbs">1.3.3.6.6</td><td class="task-name">Test Kickoff</td><td>Jun 8, 2026</td><td>0%</td><td class="red">-90.8d</td><td><span class="badge badge-amber">Review</span> FS link from TRR ITC-2 conflicts with scheduled date window</td></tr>
+            <tr><td class="wbs">1.3.3.7.6</td><td class="task-name">Test Kickoff</td><td>Jul 13, 2026</td><td>0%</td><td class="green">0d</td><td><span class="badge badge-green">Keep</span> Reasonable timing</td></tr>
+            <tr><td class="wbs">1.3.3.8.5</td><td class="task-name">Test Kickoff</td><td>Aug 17, 2026</td><td>0%</td><td class="red">-44.4d</td><td><span class="badge badge-amber">Review</span> FS link from TRR UAT conflicts with scheduled date window</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- WORKSTREAM RISK -->
+  <div class="section">
+    <div class="section-head"><span>📊</span> Workstream Risk Profile</div>
+    <div class="section-body">
+      <div class="ws-grid" id="wsGrid"></div>
+    </div>
+  </div>
+
+  <!-- RESOLUTION -->
+  <div class="section">
+    <div class="section-head"><span>🛠</span> Resolution Roadmap — Prioritized Actions to Recover Schedule</div>
+    <div class="section-body">
+      <div class="resolution-grid">
+
+        <div class="res-card priority-1">
+          <div class="res-priority">Priority 1 · Do This Week</div>
+          <div class="res-title">Close ITC-2 Open Tasks (QS4)</div>
+          <div class="res-desc">
+            ITC-2 is 31% complete with a May 14 finish. 10+ tasks are past their finish dates with 0% completion: 
+            Security Transports, Validate Fiori, Fiori App Activation, Business Functions Validation, and Transport Imports Group 1–5. 
+            These are all on the critical path. Each day of delay pushes ITC-3 and everything downstream.
+          </div>
+          <div class="res-impact">📉 <strong>Impact if not resolved:</strong> ITC-3 start slips → UAT slips → Go-Live at risk</div>
+          <div class="res-action">
+            <div class="res-action-title">Specific Actions</div>
+            <ul>
+              <li>Complete or reschedule WBS 1.1.1.5.1.7 – Security Transports (0%, was due May 4)</li>
+              <li>Complete WBS 1.1.1.5.1.10–14 – Validate Fiori, Business Functions Validation (0%, due May 5)</li>
+              <li>Start Import Groups 1–5 immediately (WBS 1.1.1.5.2.1–8)</li>
+              <li>Update % complete on Validate Syniti Connections → already 100% per latest export ✅</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="res-card priority-1">
+          <div class="res-priority">Priority 1 · Immediate</div>
+          <div class="res-title">Confirm PMO Authorization for Data Loads (May 18)</div>
+          <div class="res-desc">
+            WBS 1.2.2.1 "PMO Authorization to Start Data Loads" is pinned as Must Start On = May 18 with 0d slack. 
+            This gates <strong>all ITC-2 data loads</strong> across Finance, OTC, PTM, PTP, and Data workstreams — 
+            228 Finance tasks, 188 OTC tasks, 260 PTM tasks, 176 PTP tasks cannot start until this is formally issued.
+          </div>
+          <div class="res-impact">📉 <strong>Impact if delayed:</strong> Every day delayed cascades across 5 workstreams simultaneously</div>
+          <div class="res-action">
+            <div class="res-action-title">Specific Actions</div>
+            <ul>
+              <li>Confirm PMO authorization readiness with project sponsor by May 15</li>
+              <li>Pre-stage all data load files for Finance/OTC/PTM/PTP now (don't wait for the gate)</li>
+              <li>If system isn't ready May 18, update the MSO constraint date immediately to prevent false 0d slack</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="res-card priority-2">
+          <div class="res-priority">Priority 2 · This Month</div>
+          <div class="res-title">Update 2 MSO Constraint Dates Creating -90d Cascade</div>
+          <div class="res-desc">
+            WBS 1.3.3.6.6 "Test Kickoff" (MSO Jun 8) shows <strong>-90.8d slack</strong> — the worst in the plan.
+            WBS 1.3.3.8.5 "Test Kickoff" (MSO Aug 17) shows <strong>-44.4d slack</strong>.
+            These are not wrong test dates, but MS Project cannot compute valid slack when the constraint date conflicts with upstream dependencies. 
+            Updating the constraint dates to match the replanned schedule will fix the negative slack cascade for ~90 downstream tasks.
+          </div>
+          <div class="res-impact">🔧 <strong>Impact if fixed:</strong> Removes artificial -90.8d signal — makes real risks visible again</div>
+          <div class="res-action">
+            <div class="res-action-title">Specific Actions</div>
+            <ul>
+              <li>WBS 1.3.3.6.6: Change MSO from Jun 8 to the actual test start date per replanned schedule</li>
+              <li>WBS 1.3.3.8.5: Change MSO from Aug 17 to align with UAT timeline (est. Jul–Aug per schedule)</li>
+              <li>After updating: recalculate and verify slack returns to realistic values</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="res-card priority-2">
+          <div class="res-priority">Priority 2 · This Month</div>
+          <div class="res-title">Accelerate Data Workstream (174-Day Slippage)</div>
+          <div class="res-desc">
+            Data Readiness is the most slipped milestone in the plan (+174 days, 20% complete). 
+            The workstream has 365 future 0% tasks with an average slack of -48.6d. 
+            The root cause is that master data loads (OTC, Finance, PTM, PTP) cannot start until environments are ready AND PMO authorization is issued. 
+            The data team needs to use the ITC-2 window to complete all pre-staging validation work.
+          </div>
+          <div class="res-impact">📉 <strong>Impact if not resolved:</strong> Data Readiness Oct 12 is the gating milestone for Go-Live Oct 22 — only 10 days of buffer</div>
+          <div class="res-action">
+            <div class="res-action-title">Specific Actions</div>
+            <ul>
+              <li>Pre-stage all ITC-2 data load files while waiting for May 18 PMO authorization</li>
+              <li>Prioritize OTC Customer Master (WBS 1.2.2.2.12) — +43d slippage, gates 5 successors</li>
+              <li>Ensure Finance GL Account load (WBS 1.2.2.2.3.6) starts immediately after PMO gate — -9.6d slack</li>
+              <li>Assign dedicated resource to Inventory loads (WBS 1.2.2.4.1) — -90.8d, 5 direct successors</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="res-card priority-3">
+          <div class="res-priority">Priority 3 · Next 30 Days</div>
+          <div class="res-title">ITC-3 Environment Setup (Starts May 20)</div>
+          <div class="res-desc">
+            QS5 ITC-3 Refresh starts May 20 (System Refresh Basis — MSO pinned) and must complete by Jun 1. 
+            Currently at 0% with -27.2d slack. The entire ITC-3 data load chain (Finance, OTC, PTM, PTP, Data) 
+            cannot begin until this environment is ready. 229 tasks across 5 workstreams are blocked.
+          </div>
+          <div class="res-impact">🔧 <strong>Recovery window:</strong> May 20–Jun 1 is the critical 12-day window — no delays can be absorbed</div>
+          <div class="res-action">
+            <div class="res-action-title">Specific Actions</div>
+            <ul>
+              <li>Confirm Basis team is ready to execute System Refresh May 20 (WBS 1.1.1.6.1.1)</li>
+              <li>Pre-validate transport lists before May 20 so Import Groups can start same day as refresh</li>
+              <li>Security role transport (WBS 1.1.1.6.1.15) needs 4 days — start validation now</li>
+              <li>Data Project Create (WBS 1.1.1.6.3) must follow immediately — 3 sub-tasks, 1d each</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="res-card priority-3">
+          <div class="res-priority">Priority 3 · Strategic</div>
+          <div class="res-title">Review &amp; Update 229 SNET/FNET Constraint Dates</div>
+          <div class="res-desc">
+            131 Start No Earlier Than and 98 Finish No Earlier Than constraints exist in the plan. 
+            Many were set against the original 2025 baseline dates and have never been updated for the April 29th replan. 
+            These are not all wrong — some reflect vendor delivery windows, compliance dates, or external dependencies — 
+            but a systematic audit will identify which ones are blocking realistic early starts.
+          </div>
+          <div class="res-impact">🔧 <strong>Recovery potential:</strong> Removing stale constraints could recover 10–30 days of float on near-critical paths</div>
+          <div class="res-action">
+            <div class="res-action-title">Specific Actions</div>
+            <ul>
+              <li>Filter MS Project to show all SNET/FNET tasks with constraint date before today and 0% complete</li>
+              <li>For each: decide if the constraint reflects a real external event or was just a planning estimate</li>
+              <li>Remove constraints that are planning artifacts — change to "As Soon As Possible"</li>
+              <li>Keep constraints that reflect real external events (vendor deliveries, SAP system windows)</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- RISK HEAT MAP -->
+  <div class="section">
+    <div class="section-head"><span>🌡</span> Schedule Risk Heat Map by Phase &amp; Workstream</div>
+    <div class="section-body">
+      <table class="heat-table">
+        <thead>
+          <tr>
+            <th>Workstream</th>
+            <th>ITC-2 (May)</th>
+            <th>ITC-3 (Jun)</th>
+            <th>UAT (Jul–Sep)</th>
+            <th>PROD (Oct)</th>
+            <th>Go-Live Risk</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Finance</strong></td>
+            <td class="heat-r">🔴 228 tasks, avg -49.6d</td>
+            <td class="heat-r">🔴 Blocked on ITC-2 completion</td>
+            <td class="heat-r">🔴 +174d slippage on GL loads</td>
+            <td class="heat-a">🟡 Depends on UAT</td>
+            <td class="heat-r">CRITICAL</td>
+          </tr>
+          <tr>
+            <td><strong>Data</strong></td>
+            <td class="heat-r">🔴 365 tasks, avg -48.6d</td>
+            <td class="heat-r">🔴 Inventory loads gating all phases</td>
+            <td class="heat-r">🔴 -90.8d worst slack in plan</td>
+            <td class="heat-r">🔴 Data Readiness Oct 12 — 10d before Go-Live</td>
+            <td class="heat-r">CRITICAL</td>
+          </tr>
+          <tr>
+            <td><strong>OTC</strong></td>
+            <td class="heat-r">🔴 188 tasks, all negative</td>
+            <td class="heat-r">🔴 Customer Master +568d slippage</td>
+            <td class="heat-a">🟡 Blocked on ITC-3</td>
+            <td class="heat-a">🟡 Depends on Data Readiness</td>
+            <td class="heat-r">HIGH</td>
+          </tr>
+          <tr>
+            <td><strong>PTM</strong></td>
+            <td class="heat-r">🔴 260 tasks, all negative</td>
+            <td class="heat-r">🔴 Super BOM / BOM Conversion at risk</td>
+            <td class="heat-a">🟡 Blocked on ITC-3</td>
+            <td class="heat-a">🟡 Depends on Data Readiness</td>
+            <td class="heat-r">HIGH</td>
+          </tr>
+          <tr>
+            <td><strong>PTP</strong></td>
+            <td class="heat-r">🔴 176 tasks, all negative</td>
+            <td class="heat-r">🔴 Vendor Master at risk</td>
+            <td class="heat-a">🟡 Blocked on ITC-3</td>
+            <td class="heat-a">🟡 Depends on Data Readiness</td>
+            <td class="heat-r">HIGH</td>
+          </tr>
+          <tr>
+            <td><strong>Basis</strong></td>
+            <td class="heat-a">🟡 ITC-2 refresh in progress</td>
+            <td class="heat-r">🔴 ITC-3 starts May 20 — 0% done</td>
+            <td class="heat-a">🟡 UAT refresh Jun 9 (MSO)</td>
+            <td class="heat-a">🟡 Prod build Sep 8 (MSO)</td>
+            <td class="heat-a">MEDIUM</td>
+          </tr>
+          <tr>
+            <td><strong>Development</strong></td>
+            <td class="heat-a">🟡 Import Groups blocked</td>
+            <td class="heat-a">🟡 ITC-3 transport chain</td>
+            <td class="heat-g">🟢 5 tasks have float</td>
+            <td class="heat-g">🟢 Most complete by UAT</td>
+            <td class="heat-a">MEDIUM</td>
+          </tr>
+          <tr>
+            <td><strong>Security</strong></td>
+            <td class="heat-a">🟡 Role transport critical</td>
+            <td class="heat-a">🟡 ITC-3 role deployment</td>
+            <td class="heat-g">🟢 Role mapping 46% done, 71d float</td>
+            <td class="heat-g">🟢 Some float available</td>
+            <td class="heat-a">MEDIUM</td>
+          </tr>
+          <tr>
+            <td><strong>Testing</strong></td>
+            <td class="heat-g">🟢 12 tasks with float</td>
+            <td class="heat-g">🟢 Test cycles have 68d float</td>
+            <td class="heat-g">🟢 UAT with roles — 68d float</td>
+            <td class="heat-a">🟡 Final UAT close</td>
+            <td class="heat-g">LOW</td>
+          </tr>
+          <tr>
+            <td><strong>Training</strong></td>
+            <td class="heat-g">🟢 Float available</td>
+            <td class="heat-g">🟢 Float available</td>
+            <td class="heat-g">🟢 12 tasks with >10d float</td>
+            <td class="heat-g">🟢 Delivery window flexible</td>
+            <td class="heat-g">LOW</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- CONSTRAINT DRIFT ALERT -->
+  <div class="section">
+    <div class="section-head"><span>⚠️</span> Constraint Drift Alert — Stale Constraints Masking Real Schedule</div>
+    <div class="section-body">
+
+      <div style="background:#1e3a5f;border-left:4px solid #f59e0b;padding:16px 20px;border-radius:6px;margin-bottom:20px;">
+        <div style="font-weight:700;color:#fbbf24;font-size:1.05rem;margin-bottom:8px;">Why Slack Is Negative Across the Entire Plan</div>
+        <div style="color:#cbd5e1;font-size:0.92rem;line-height:1.65;">
+          The April 29th replan moved task dates forward, but <strong style="color:#f8fafc;">239 hard constraints (131 SNET, 98 FNET, 9 MSO)</strong> were never updated.
+          MS Project's backward pass anchors Late Finish to these old constraint dates, making 
+          <strong style="color:#fca5a5;">Total Slack = Late Finish − Early Finish go deeply negative</strong> on tasks that are not actually behind.
+          This is a data quality artifact, not a real schedule failure.
+        </div>
+        <div style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;">
+          <div style="background:#0f2744;padding:10px 16px;border-radius:6px;text-align:center;">
+            <div style="font-size:1.6rem;font-weight:800;color:#f87171;">119</div>
+            <div style="font-size:0.78rem;color:#94a3b8;">Future tasks with<br>&gt;30d drift past constraint</div>
+          </div>
+          <div style="background:#0f2744;padding:10px 16px;border-radius:6px;text-align:center;">
+            <div style="font-size:1.6rem;font-weight:800;color:#f87171;">110</div>
+            <div style="font-size:0.78rem;color:#94a3b8;">CRITICAL severity<br>(&gt;90d drift)</div>
+          </div>
+          <div style="background:#0f2744;padding:10px 16px;border-radius:6px;text-align:center;">
+            <div style="font-size:1.6rem;font-weight:800;color:#fbbf24;">+538d</div>
+            <div style="font-size:0.78rem;color:#94a3b8;">Worst single constraint<br>(set Apr 2025, task in Sep 2026)</div>
+          </div>
+          <div style="background:#0f2744;padding:10px 16px;border-radius:6px;text-align:center;">
+            <div style="font-size:1.6rem;font-weight:800;color:#34d399;">9</div>
+            <div style="font-size:0.78rem;color:#94a3b8;">MSO governance gates<br>preserved (not cleared)</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:#0f2744;border:1px solid #334155;border-radius:6px;padding:16px 20px;margin-bottom:20px;">
+        <div style="font-weight:700;color:#38bdf8;margin-bottom:10px;">Cleanup Action — VBA Macro</div>
+        <div style="color:#cbd5e1;font-size:0.88rem;line-height:1.65;margin-bottom:12px;">
+          A VBA macro has been created at <code style="background:#1e3a5f;padding:2px 6px;border-radius:3px;color:#93c5fd;">scripts/clear-stale-constraints.bas</code>.
+          It will:
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.86rem;">
+          <div style="background:#0a1929;padding:12px;border-radius:5px;border-left:3px solid #22c55e;">
+            <div style="color:#86efac;font-weight:600;margin-bottom:6px;">CLEARED (set to ASAP)</div>
+            <div style="color:#94a3b8;">131 × SNET (Start No Earlier Than)<br>98 × FNET (Finish No Earlier Than)<br>1 × SNLT (Start No Later Than)</div>
+            <div style="color:#64748b;margin-top:6px;font-size:0.8rem;">These were pre-replan scheduling anchors,<br>not real governance dates.</div>
+          </div>
+          <div style="background:#0a1929;padding:12px;border-radius:5px;border-left:3px solid #f59e0b;">
+            <div style="color:#fbbf24;font-weight:600;margin-bottom:6px;">PRESERVED (MSO — governance gates)</div>
+            <div style="color:#94a3b8;">ITC-3 Test Kickoff — Jul 13, 2026<br>UAT Test Kickoff — Aug 17, 2026<br>ITC-2 Kickoff — Jun 8, 2026<br>QS5 ITC-3 System Refresh — May 20<br>+ 5 other governance milestones</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;background:#1a2d4a;padding:10px 14px;border-radius:5px;font-size:0.84rem;color:#94a3b8;">
+          <strong style="color:#e2e8f0;">Before clearing:</strong> Each task's original constraint is saved to custom field <code style="color:#93c5fd;">Text20</code> 
+          (e.g. <code style="color:#93c5fd;">"WAS:FNET:2026-04-17"</code>) so slippage monitoring survives the cleanup.
+        </div>
+        <div style="margin-top:10px;font-size:0.83rem;color:#64748b;">
+          To run: Open the .mpp → Alt+F11 → Insert Module → Paste the .bas file → F5 · Press Ctrl+Z to undo if needed before saving.
+        </div>
+      </div>
+
+      <div style="font-weight:600;color:#e2e8f0;margin-bottom:10px;font-size:0.9rem;">Top Constraint-Drift Tasks (Scheduled Date vs Original Constraint Intent)</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+          <thead>
+            <tr style="background:#0f2744;color:#94a3b8;text-transform:uppercase;font-size:0.72rem;letter-spacing:0.05em;">
+              <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1e3a5f;">WBS</th>
+              <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1e3a5f;">Task</th>
+              <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1e3a5f;">Constraint Was</th>
+              <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1e3a5f;">Now Scheduled</th>
+              <th style="padding:8px 10px;text-align:center;border-bottom:1px solid #1e3a5f;">Drift</th>
+              <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1e3a5f;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="driftBody"></tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:18px;background:#0f2744;border:1px solid #1e3a5f;border-radius:6px;padding:14px 18px;">
+        <div style="font-weight:600;color:#38bdf8;margin-bottom:8px;font-size:0.9rem;">After the Macro Runs — Ongoing Drift Monitoring</div>
+        <div style="color:#94a3b8;font-size:0.85rem;line-height:1.65;">
+          Once constraints are cleared and the plan is re-exported, the dashboard will compare each task's 
+          <strong style="color:#e2e8f0;">current scheduled date</strong> against <strong style="color:#e2e8f0;">Text20</strong> (the original intent stored before clearing).
+          Any task whose scheduled date slips beyond its original constraint date will surface as an alert here — 
+          giving you the governance visibility without the false-negative slack that stale constraints create.
+        </div>
+        <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:6px;font-size:0.8rem;"><span style="background:#ef4444;width:10px;height:10px;border-radius:50%;display:inline-block;"></span><span style="color:#94a3b8;">Exceeds original constraint by &gt;30d</span></div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:0.8rem;"><span style="background:#f59e0b;width:10px;height:10px;border-radius:50%;display:inline-block;"></span><span style="color:#94a3b8;">Exceeds original constraint by 1–30d</span></div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:0.8rem;"><span style="background:#22c55e;width:10px;height:10px;border-radius:50%;display:inline-block;"></span><span style="color:#94a3b8;">On track vs original constraint intent</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  AMETEK SAP S/4 · Critical Path &amp; Driver Analysis · Data: April 29th Full Replan · Generated May 6, 2026
+</footer>
+
+<script>
+const drivers = [
+  {pri:1, uid:1700, wbs:'1.2.2.2.3.6', name:'Post Load Validation (GL Account)', ws:'Finance', finish:'2026-05-21', pct:0, slack:-9.6, succs:5, slip:+43, action:'Start immediately after PMO gate May 18'},
+  {pri:1, uid:1770, wbs:'1.2.2.2.14.5', name:'Load (ITC-2 Master Data)', ws:'Data',    finish:'2026-05-25', pct:0, slack:-9.6, succs:5, slip:+45, action:'Pre-stage files — start May 18'},
+  {pri:1, uid:2947, wbs:'1.2.2.3',     name:'ITC2 Master Data Loads Complete', ws:'Data', finish:'2026-05-29', pct:0, slack:null, succs:5, slip:0,   action:'Gate milestone — drives ITC-3 start'},
+  {pri:1, uid:849,  wbs:'1.1.1.5',     name:'QS4 ITC-2 Refresh (summary)',  ws:'Basis',   finish:'2026-05-14', pct:31, slack:-8.2, succs:null, slip:-63, action:'Complete remaining 69% this week'},
+  {pri:2, uid:2974, wbs:'1.2.3.2.3.6', name:'Post Load Validation (ITC-3 GL)', ws:'Finance', finish:'2026-06-11', pct:0, slack:-24.6, succs:5, slip:+64, action:'ITC-3 data load — needs environment first'},
+  {pri:2, uid:3044, wbs:'1.2.3.2.14.5',name:'Load (ITC-3 Master Data)', ws:'Data',      finish:'2026-06-15', pct:0, slack:-24.6, succs:5, slip:+66, action:'Pre-stage files for ITC-3 window'},
+  {pri:2, uid:3330, wbs:'1.2.3.4.1',   name:'Inventory (ITC-3 Mock Data)', ws:'Data',    finish:'2026-06-22', pct:0, slack:-24.6, succs:5, slip:0,   action:'Mock data load — follows master data'},
+  {pri:2, uid:2423, wbs:'1.2.4.1',     name:'PMO Authorization (UAT Data Loads)', ws:'PMO', finish:'2026-06-22', pct:0, slack:null, succs:5, slip:+77, action:'Gate — must issue by Jun 22 (SNLT)'},
+  {pri:3, uid:2438, wbs:'1.2.4.2.3.6', name:'Post Load Validation (UAT GL)', ws:'Finance', finish:'2026-09-29', pct:0, slack:-89.8, succs:5, slip:+174, action:'UAT data load — follows UAT auth'},
+  {pri:3, uid:2508, wbs:'1.2.4.2.14.5',name:'Load (UAT Master Data)', ws:'Data',        finish:'2026-09-30', pct:0, slack:-89.8, succs:5, slip:+173, action:'UAT data load — follows UAT auth'},
+  {pri:3, uid:2945, wbs:'1.2.2.4.1',   name:'Inventory (ITC-2 Mock)', ws:'Data',         finish:'2026-10-09', pct:0, slack:-90.8, succs:5, slip:0,   action:'Mock inventory load — gating Data Readiness'},
+  {pri:3, uid:3351, wbs:'1.2.4.4.1',   name:'Inventory (UAT Mock Data)', ws:'Data',      finish:'2026-10-09', pct:0, slack:-40.7, succs:5, slip:0,   action:'UAT mock inventory — 10d before Go-Live'},
+];
+
+const sevColor = s => s < -30 ? 'badge-red' : s < -10 ? 'badge-amber' : s < 0 ? 'badge-amber' : 'badge-green';
+const priColor = p => p===1 ? 'badge-red' : p===2 ? 'badge-amber' : 'badge-blue';
+const fmt = d => d ? new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+
+document.getElementById('driverBody').innerHTML = drivers.map(dr => `
+  <tr>
+    <td><span class="badge ${priColor(dr.pri)}">P${dr.pri}</span></td>
+    <td><div class="wbs">${dr.wbs}</div><div class="task-name">${dr.name}</div></td>
+    <td><span class="badge badge-gray">${dr.ws}</span></td>
+    <td>${fmt(dr.finish)}</td>
+    <td>${dr.pct}% <div class="prog-bar"><div class="prog-fill" style="width:${dr.pct}%"></div></div></td>
+    <td class="${dr.slack!=null && dr.slack<0 ? 'red' : 'green'}">${dr.slack!=null ? dr.slack.toFixed(1)+'d' : '—'}</td>
+    <td>${dr.succs!=null ? dr.succs+' direct' : '—'}</td>
+    <td style="max-width:200px;font-size:10px;color:#374151">${dr.action}</td>
+  </tr>
+`).join('');
+
+const wsData = [
+  {ws:'Finance', total:228, neg:188, zero:0, near:0, ok:0, avgSlack:-49.6},
+  {ws:'Data',    total:365, neg:357, zero:0, near:3, ok:1, avgSlack:-48.6},
+  {ws:'OTC',     total:188, neg:148, zero:0, near:0, ok:0, avgSlack:-49.3},
+  {ws:'PTM',     total:260, neg:184, zero:0, near:0, ok:0, avgSlack:-49.9},
+  {ws:'PTP',     total:176, neg:132, zero:0, near:0, ok:0, avgSlack:-48.8},
+  {ws:'Development',total:50,neg:42,zero:0, near:3, ok:5, avgSlack:-34.6},
+  {ws:'Basis',   total:27,  neg:20,  zero:3, near:4, ok:0, avgSlack:-40.5},
+  {ws:'Security',total:12,  neg:9,   zero:0, near:2, ok:1, avgSlack:-34.7},
+  {ws:'Testing', total:14,  neg:1,   zero:0, near:1, ok:12,avgSlack:null},
+  {ws:'Training',total:15,  neg:0,   zero:3, near:0, ok:12,avgSlack:null},
+];
+
+const riskLabel = w => {
+  const riskPct = (w.neg+w.zero)/w.total;
+  if (riskPct >= 0.95) return '<span class="badge badge-red">CRITICAL</span>';
+  if (riskPct >= 0.70) return '<span class="badge badge-amber">HIGH</span>';
+  if (riskPct >= 0.30) return '<span class="badge badge-blue">MEDIUM</span>';
+  return '<span class="badge badge-green">LOW</span>';
+};
+
+document.getElementById('wsGrid').innerHTML = wsData.map(w => {
+  const t = w.total;
+  const negW = Math.round(w.neg/t*100), zeroW = Math.round(w.zero/t*100),
+        nearW = Math.round(w.near/t*100), okW = Math.round(w.ok/t*100);
+  return `<div class="ws-card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="ws-name">${w.ws}</div>
+      ${riskLabel(w)}
+    </div>
+    <div class="ws-stat"><span>Future tasks</span><strong>${t}</strong></div>
+    <div class="ws-stat"><span>Negative slack</span><strong class="red">${w.neg} (${Math.round(w.neg/t*100)}%)</strong></div>
+    <div class="ws-stat"><span>Avg slack</span><strong class="${w.avgSlack!=null&&w.avgSlack<0?'red':'green'}">${w.avgSlack!=null?w.avgSlack+'d':'n/a'}</strong></div>
+    <div class="ws-bar" style="margin-top:8px">
+      <div class="ws-seg-neg" style="width:${negW}%" title="Negative slack: ${w.neg}"></div>
+      <div class="ws-seg-zero" style="width:${zeroW}%" title="Zero slack: ${w.zero}"></div>
+      <div class="ws-seg-near" style="width:${nearW}%" title="Near-critical: ${w.near}"></div>
+      <div class="ws-seg-ok" style="width:${okW}%" title="Float >10d: ${w.ok}"></div>
+    </div>
+    <div style="font-size:9px;color:var(--muted);margin-top:3px;display:flex;gap:8px">
+      <span style="color:var(--red)">■ neg</span>
+      <span style="color:var(--amber)">■ 0d</span>
+      <span style="color:#fbbf24">■ near</span>
+      <span style="color:var(--green)">■ ok</span>
+    </div>
+  </div>`;
+}).join('');
+
+// Constraint drift table
+const driftData = [
+  {wbs:'1.1.1.8.2.7', name:'Import Group 4 - workbench/dev work',       ct:'SNET', cd:'2025-04-03', sched:'2026-09-23', drift:538, ws:'Tech/Infra'},
+  {wbs:'1.1.1.8.1.13',name:'Business Functions Validation',              ct:'SNET', cd:'2026-01-05', sched:'2026-09-15', drift:253, ws:'Tech/Infra'},
+  {wbs:'1.1.1.8.2.2', name:'Manual activities group 1',                  ct:'FNET', cd:'2026-02-11', sched:'2026-09-18', drift:219, ws:'Tech/Infra'},
+  {wbs:'1.2.4.2.48.1',name:'Manual File Staged and Posted "Ready"',      ct:'SNET', cd:'2026-04-06', sched:'2026-10-07', drift:184, ws:'Data'},
+  {wbs:'1.2.5.2.48.1',name:'Manual File Staged and Posted "Ready"',      ct:'SNET', cd:'2026-04-06', sched:'2026-10-07', drift:184, ws:'Data'},
+  {wbs:'1.4.1.4.2',   name:'Deliver End User Training',                  ct:'SNET', cd:'2026-03-09', sched:'2026-08-31', drift:175, ws:'Training'},
+  {wbs:'1.2.4.2.19.3',name:'Simulate Load',                              ct:'FNET', cd:'2026-04-10', sched:'2026-10-01', drift:174, ws:'Data'},
+  {wbs:'1.2.5.2.19.3',name:'Simulate Load',                              ct:'FNET', cd:'2026-04-10', sched:'2026-10-01', drift:174, ws:'Data'},
+  {wbs:'1.2.4.2.3.1', name:'Load File Staged and Posted "Ready"',        ct:'SNET', cd:'2026-04-06', sched:'2026-09-25', drift:172, ws:'Data'},
+  {wbs:'1.2.4.2.63.2',name:'Post Load Validation',                       ct:'SNET', cd:'2026-04-17', sched:'2026-10-06', drift:172, ws:'Data'},
+  {wbs:'1.2.4.2.63.1',name:'Load',                                       ct:'FNET', cd:'2026-04-20', sched:'2026-10-06', drift:169, ws:'Data'},
+  {wbs:'1.2.4.2.16.1',name:'Manual File Staged and Posted "Ready"',      ct:'SNET', cd:'2026-04-06', sched:'2026-09-30', drift:177, ws:'Data'},
+];
+
+const fmtShort = d => new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});
+const driftColor = n => n > 90 ? '#ef4444' : n > 30 ? '#f59e0b' : '#22c55e';
+const wsTag = w => ({
+  'Tech/Infra':'#6366f1','Data':'#f59e0b','Training':'#22c55e'
+}[w]||'#64748b');
+
+document.getElementById('driftBody').innerHTML = driftData.map(r => `
+  <tr style="border-bottom:1px solid #1e3a5f;">
+    <td style="padding:7px 10px;color:#64748b;font-family:monospace;font-size:0.78rem;">${r.wbs}</td>
+    <td style="padding:7px 10px;color:#e2e8f0;">
+      ${r.name}
+      <span style="background:${wsTag(r.ws)}22;color:${wsTag(r.ws)};font-size:0.7rem;padding:1px 6px;border-radius:3px;margin-left:4px;">${r.ws}</span>
+    </td>
+    <td style="padding:7px 10px;color:#94a3b8;white-space:nowrap;">
+      <span style="background:#1e3a5f;padding:2px 6px;border-radius:3px;font-size:0.78rem;">${r.ct}</span>
+      ${fmtShort(r.cd)}
+    </td>
+    <td style="padding:7px 10px;color:#cbd5e1;white-space:nowrap;">${fmtShort(r.sched)}</td>
+    <td style="padding:7px 10px;text-align:center;">
+      <span style="background:${driftColor(r.drift)}22;color:${driftColor(r.drift)};font-weight:700;padding:2px 8px;border-radius:4px;font-size:0.82rem;">+${r.drift}d</span>
+    </td>
+    <td style="padding:7px 10px;color:#64748b;font-size:0.8rem;">Remove constraint → let network drive</td>
+  </tr>`).join('');
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+flowchart LR
+  T232["232 · Verify Role Mapping Complete"]
+  T225["225 · Develop Curriculum"]
+  T4542["4542 · Develop Course ppts"]
+  T233["233 · Develop Work Instructions"]
+  T232 --> T225
+  T225 --> T4542
+  T4542 --> T233
+  class T232 critical
+  class T225 critical
+  class T4542 critical
+  class T233 critical
+  classDef critical fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d

@@ -10,6 +10,8 @@
     "start": "node dist/index.js",
     "import": "node scripts/import-msp.js",
     "report:daily": "powershell -ExecutionPolicy Bypass -File scripts/run-daily-report.ps1",
+    "report:pmo:metrics": "python scripts/build_pmo_metrics.py --config config/pmo-metrics-sources.example.json",
+    "report:pmo:huddle": "python scripts/build_pmo_huddle_report.py",
     "schedule:intelligence": "node schedule_intelligence/build.js",
     "export:manual": "node scripts/export-manual-import-csv.js",
     "link:relations": "node scripts/link-relations.js",

@@ -63,6 +63,34 @@ Outputs:
 - `outputs/daily_report/Ametek_SAP_S4_Impl_Daily_Report_summary.md`
 - `outputs/daily_report/last_snapshot.json`
 
+## PMO metrics framework (domain-pluggable)
+
+For reusable reporting across multiple outputs (not only one report), use the modular PMO metrics builder:
+
+- command: `npm run report:pmo:metrics`
+- script: `scripts/build_pmo_metrics.py`
+- config template: `config/pmo-metrics-sources.example.json`
+
+Design goals:
+
+- ingest full source sheets first as PQ-style source tables
+- perform helper flags and transformations in the metrics layer
+- produce domain tables that can be reused by huddle, dashboards, and future reports
+- add new sections incrementally (Project Plan, RAID, Actions, etc.) by adding a new domain builder + config entry
+
+Current implemented domain:
+
+- `testing_defects` (first module)
+  - `PQ_TD_Source` (full-row source ingest across included sheets)
+  - `PQ_TD_Detail` (row-level detail with section inference and link flags)
+  - `PQ_TD_Summary` (overall + section totals)
+  - `PQ_TD_Workstream` (workstream rollup plus owner-level detail)
+
+Dashboard design governance:
+
+- Visual contract for all PMO dashboard domains (layout/style/build flow/gotchas):
+  - `docs/PMO_DASHBOARD_DESIGN_CONTRACT.md`
+
 ## Publish dashboard with GitHub Pages
 
 1. Run `npm run dashboard:pages`.

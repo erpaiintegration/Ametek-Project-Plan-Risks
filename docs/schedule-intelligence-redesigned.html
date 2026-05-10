@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Schedule Action and Risks</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/frappe-gantt/dist/frappe-gantt.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/vis-timeline/styles/vis-timeline-graph2d.min.css"/>
+  <style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #f9fafc;
+  --card: #fff;
+  --txt: #1f2937;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  --red: #dc2626;
+  --amber: #d97706;
+  --blue: #2563eb;
+  --green: #16a34a;
+  --red-bg: #fee2e2;
+  --amber-bg: #fef3c7;
+  --blue-bg: #dbeafe;
+  --green-bg: #dcfce7;
+}
+html, body { height: 100%; overflow: auto; }
+body {
+  font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--txt);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* HEADER */
+header {
+  background: linear-gradient(135deg, #0f2137 0%, #1e3a8a 100%);
+  color: #fff;
+  padding: 8px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+header h1 { font-size: 15px; font-weight: 700; }
+header .sub { font-size: 10px; opacity: 0.8; margin-top: 1px; }
+
+/* KPI STRIP */
+#kpiStrip {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+.kpi-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.35px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.kpi-row { display: flex; gap: 0; }
+.kpi-cell {
+  flex: 1;
+  padding: 6px 10px;
+  text-align: center;
+  border-right: 1px solid var(--line);
+}
+.kpi-cell:last-child { border-right: none; }
+.kpi-cell .val { font-size: 14px; font-weight: 700; line-height: 1; }
+.kpi-cell .lbl { font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); margin-top: 2px; }
+.val-red { color: var(--red); }
+.val-amber { color: var(--amber); }
+.val-blue { color: var(--blue); }
+.val-green { color: var(--green); }
+.val-dim { color: var(--muted); }
+
+/* OVERVIEW */
+#topOverview {
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.overview-card {
+  background: var(--card);
+  border: 1px solid #dbe4ff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: var(--shadow);
+}
+.overview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.overview-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+}
+.overview-subtabs { display: flex; gap: 6px; }
+.overview-btn {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+}
+.overview-btn.active { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
+#vegaMilestoneOverview, #visMilestoneOverview { height: 110px; }
+#vegaMilestoneOverview { display: none; }
+#visMilestoneOverview { display: block; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; }
+#visMilestoneOverview .vis-item {
+  border-width: 1px;
+  border-radius: 8px;
+  font-size: 10px;
+  padding: 2px 6px;
+}
+#visMilestoneOverview .vis-item.bar-critical { background: #fee2e2; border-color: #dc2626; color: #7f1d1d; }
+#visMilestoneOverview .vis-item.bar-driver { background: #dbeafe; border-color: #2563eb; color: #1e3a8a; }
+#visMilestoneOverview .vis-item.bar-all { background: #fef3c7; border-color: #d97706; color: #92400e; }
+#visMilestoneOverview .vis-item.bar-context { background: #f1f5f9; border-color: #94a3b8; color: #475569; opacity: .7; }
+#visMilestoneOverview .vis-label { font-size: 10px; color: #334155; }
+
+/* LAYOUT: TOP ROW */
+#layoutTop {
+  display: flex;
+  gap: 0;
+  overflow: hidden;
+  height: 320px;
+  flex-shrink: 0;
+}
+
+/* LEFT: TASK HIERARCHY */
+#taskHierarchy {
+  flex: 0 0 280px;
+  border-right: 1px solid var(--line);
+  background: var(--card);
+  overflow-y: auto;
+  padding: 10px;
+  font-size: 11px;
+}
+#taskHierarchy .title {
+  font-weight: 700;
+  font-size: 11px;
+  color: #1e3a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 8px;
+}
+.lvl-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.2fr;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.lvl-head div {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .25px;
+  color: #334155;
+  background: #f8fafc;
+  border-right: 1px solid #cbd5e1;
+  padding: 4px 6px;
+  text-align: center;
+}
+.lvl-head div:last-child { border-right: none; }
+.tree-item {
+  margin: 0;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+  transition: background 120ms ease;
+}
+.tree-item:hover { background: #f1f5f9; }
+.tree-item.selected { background: #0f2137; color: #fff; }
+.tree-item.lv2 {
+  font-weight: 700;
+  margin-top: 6px;
+  color: #1e3a8a;
+}
+.tree-item.lv3 {
+  margin-left: 16px;
+  color: #475569;
+  font-size: 10px;
+}
+.tree-toggle {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  margin-right: 4px;
+  cursor: pointer;
+}
+
+/* RIGHT: GANTT PANEL */
+#ganttPanelTop {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#ganttControls {
+  flex-shrink: 0;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  padding: 6px 10px;
+  font-size: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.ctrl-section {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.ctrl-section label {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+.ctrl-section select, .ctrl-section button {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+#ganttWrap {
+  flex: 1;
+  overflow: auto;
+  background: var(--card);
+}
+#gantt {
+  width: 100%;
+  height: 100%;
+}
+
+/* MODE TABS */
+#modeTabs {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+  height: auto;
+}
+.mode-btn {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.mode-btn.active {
+  background: #0f2137;
+  color: #fff;
+  border-color: #0f2137;
+}
+
+/* LAYOUT: BOTTOM ROW */
+#layoutBottom {
+  display: flex;
+  flex: 0 0 300px;
+  border-top: 1px solid var(--line);
+  gap: 0;
+  overflow: hidden;
+}
+
+/* LEFT: NETWORK */
+#networkSection {
+  flex: 1;
+  border-right: 1px solid var(--line);
+  background: var(--card);
+  padding: 10px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+#networkSection .title {
+  font-weight: 700;
+  font-size: 11px;
+  color: #1e3a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 8px;
+}
+#networkCanvas {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+#ncGraph {
+  width: 100%;
+  height: 100%;
+  background: #fafbfc;
+}
+
+/* RIGHT: ACTION ITEMS */
+#actionItemsSection {
+  flex: 1;
+  background: var(--card);
+  padding: 10px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+#actionItemsSection .title {
+  font-weight: 700;
+  font-size: 11px;
+  color: #1e3a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 8px;
+}
+#actionPanelContent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.action-item {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #f9fafc;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.tree-item.active-task {
+  background: #dbeafe !important;
+  border-left: 3px solid var(--blue) !important;
+  color: var(--blue) !important;
+}
+.action-item:hover {
+  background: #eff6ff;
+  border-color: #3b82f6;
+}
+.action-item.critical {
+  border-color: var(--red);
+  background: var(--red-bg);
+}
+
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Schedule Action and Risks</h1>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <a href="risk-action-board.html" style="color:#fff;font-size:11px;opacity:.85;text-decoration:none;border:1px solid rgba(255,255,255,.4);padding:4px 10px;border-radius:4px">⚡ Risk &amp; Action Board →</a>
+    <span id="headerClock" style="font-size:10px;opacity:.6"></span>
+  </div>
+</header>
+
+<!-- KPI hidden but IDs kept for JS compatibility -->
+<div id="kpiStrip" style="display:none">
+  <span id="kCritical"></span><span id="kNearCritical"></span><span id="kDuration"></span>
+  <span id="kCyclic"></span><span id="kImmediate"></span><span id="kSoon"></span>
+  <span id="kWatch"></span><span id="kWorking"></span><span id="kOnepager"></span>
+</div>
+
+<div id="topOverview">
+  <div class="overview-card">
+    <div class="overview-head">
+      <div class="overview-title">Major Milestones Timeline</div>
+    </div>
+    <div id="visMilestoneOverview"></div>
+  </div>
+</div>
+
+<!-- TOP ROW: Task Hierarchy (left) + Gantt (right) -->
+<div id="layoutTop">
+  <div id="taskHierarchy">
+    <div class="title">Onepager Tasks</div>
+    <div id="taskTree"></div>
+  </div>
+
+  <div id="ganttPanelTop">
+    <div id="ganttControls">
+      <div class="ctrl-section">
+        <label>View Filter</label>
+        <select id="viewFilter" onchange="setTimelineMode(this.value)">
+          <option value="ALL" selected>All milestones</option>
+          <option value="CRITICAL">Critical path</option>
+          <option value="DRIVER">Driver flow</option>
+        </select>
+      </div>
+      <div class="ctrl-section">
+        <label>Zoom</label>
+        <select id="viewMode" onchange="changeView()">
+          <option value="Week" selected>Week</option>
+          <option value="Month">Month</option>
+          <option value="Day">Day</option>
+        </select>
+      </div>
+      <span id="ganttInfo" style="font-size:10px;color:var(--muted);margin-left:auto"></span>
+    </div>
+    <div id="ganttWrap"><div id="gantt"></div></div>
+  </div>
+</div>
+
+<!-- MODE TABS: Toggle between views -->
+<div id="modeTabs">
+  <button id="modeAll" class="mode-btn active" onclick="setTimelineMode('ALL')">All milestones view</button>
+  <button id="modeCritical" class="mode-btn" onclick="setTimelineMode('CRITICAL')">Critical path view</button>
+  <button id="modeDriver" class="mode-btn" onclick="setTimelineMode('DRIVER')">Driver flow view</button>
+</div>
+
+<!-- BOTTOM ROW: Network (left) + Action Items (right) -->
+<div id="layoutBottom">
+  <div id="networkSection">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="title">Network Diagram</div>
+      <button onclick="openMilestoneSelector()" style="padding:4px 10px;background:#1e3a8a;color:#fff;border:none;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700">Select Milestones</button>
+    </div>
+    <div id="networkCanvas">
+      <div id="ncGraph"></div>
+    </div>
+  </div>
+
+  <div id="actionItemsSection">
+    <div class="title">Issues & Risks</div>
+    <div id="actionPanelContent"></div>
+  </div>
+</div>
+
+<!-- MILESTONE SELECTOR MODAL -->
+<div id="milestoneSelector" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #cbd5e1;border-radius:8px;z-index:1000;box-shadow:0 20px 25px rgba(0,0,0,0.15);width:90%;max-width:600px;max-height:70vh;overflow-y:auto;">
+  <div style="padding:12px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;">
+    <div style="font-weight:700;font-size:14px;color:#1f2937">Select Milestones for Network Analysis</div>
+    <button onclick="closeMilestoneSelector()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280">&times;</button>
+  </div>
+  <div id="milestoneCheckboxes" style="padding:12px;"></div>
+  <div style="padding:12px;border-top:1px solid #e5e7eb;display:flex;gap:8px;justify-content:flex-end;">
+    <button onclick="closeMilestoneSelector()" style="padding:8px 16px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer">Cancel</button>
+    <button onclick="applyMilestoneSelection()" style="padding:8px 16px;border:none;border-radius:4px;background:#1e3a8a;color:#fff;cursor:pointer;font-weight:700">Apply</button>
+  </div>
+</div>
+
+<!-- BACKDROP FOR MODAL -->
+<div id="milestoneBackdrop" onclick="closeMilestoneSelector()" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/frappe-gantt/dist/frappe-gantt.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<script src="https://unpkg.com/vis-timeline/standalone/umd/vis-timeline-graph2d.min.js"></script>
+
+<script>
+// ── GLOBAL STATE ──
+let DATA = null;
+let timelineMode = 'ALL';
+let overviewRenderer = 'vis';
+let ganttChart = null;
+let currentViewMode = 'Week';
+let taskByUid = new Map();
+let taskNarrativeMap = new Map();
+let selectedCanvasMilestones = new Set();
+let networkCanvasMode = 'ALL';
+let pendingMilestoneSelection = new Set();
+let overviewVisTimeline = null;
+
+// Load data and initialize dashboard
+document.addEventListener('DOMContentLoaded', () => {
+  fetch('schedule-intelligence-data.json')
+    .then(r => r.json())
+    .then(data => {
+      DATA = data;
+      buildTaskMaps();
+      initDashboard();
+    })
+    .catch(err => console.error('Failed to load data:', err));
+});
+
+function buildTaskMaps() {
+  taskByUid.clear();
+  taskNarrativeMap.clear();
+  if (!DATA.tasks) return;
+  DATA.tasks.forEach(t => {
+    taskByUid.set(String(t.uid), t);
+    if (t.narrativeSnapshot) taskNarrativeMap.set(String(t.uid), t.narrativeSnapshot);
+  });
+  
+  // Build successor relationships from predecessor relationships
+  DATA.tasks.forEach(t => {
+    t.successors = [];
+  });
+  DATA.tasks.forEach(t => {
+    if (t.predecessors) {
+      t.predecessors.forEach(predUid => {
+        const predTask = taskByUid.get(String(predUid));
+        if (predTask && predTask.successors) {
+          predTask.successors.push(t.uid);
+        }
+      });
+    }
+  });
+}
+
+function initDashboard() {
+  // ── KPI Strip ──
+  const m = DATA.metrics || {};
+  document.getElementById('kCritical').textContent = m.criticalTasks || '—';
+  document.getElementById('kNearCritical').textContent = m.nearCriticalTasks || 0;
+  document.getElementById('kDuration').textContent = m.cpmSummary?.projectDuration ? m.cpmSummary.projectDuration + 'd' : '—';
+  document.getElementById('kCyclic').textContent = m.cpmSummary?.cyclic ? 'YES ⚠' : 'None';
+  document.getElementById('kImmediate').textContent = m.immediateCount || 0;
+  document.getElementById('kSoon').textContent = m.soonCount || 0;
+  document.getElementById('kWatch').textContent = m.watchCount || 0;
+  document.getElementById('kWorking').textContent = m.workingTasks || 0;
+  const flag20Count = (DATA.tasks || []).filter(t => t.flag20 === true).length;
+  const kWorking2 = document.getElementById('kOnepager');
+  if (kWorking2) kWorking2.textContent = flag20Count;
+
+  // ── Overview ──
+  renderVisMilestoneOverview();
+  renderModeTabs();
+
+  // ── Task Hierarchy ──
+  renderTaskHierarchy();
+
+  // ── Gantt ──
+  renderGantt();
+
+  // ── Network: Show selector prompt initially ──
+  renderNetworkDiagram();
+
+  // ── Action Items ──
+  renderActionItems();
+}
+
+function setOverviewRenderer(kind) {
+  overviewRenderer = kind;
+  const vega = document.getElementById('vegaMilestoneOverview');
+  const vis = document.getElementById('visMilestoneOverview');
+  if (vega) vega.style.display = kind === 'vega' ? 'block' : 'none';
+  if (vis) vis.style.display = kind === 'vis' ? 'block' : 'none';
+  const vBtn = document.getElementById('overviewVega');
+  const tBtn = document.getElementById('overviewVis');
+  if (vBtn) vBtn.className = 'overview-btn' + (kind === 'vega' ? ' active' : '');
+  if (tBtn) tBtn.className = 'overview-btn' + (kind === 'vis' ? ' active' : '');
+}
+
+function renderVegaMilestoneOverview() {
+  const target = document.getElementById('vegaMilestoneOverview');
+  if (!target || !DATA || !DATA.tasks) return;
+  
+  const milestones = DATA.tasks
+    .filter(t => t.milestone && t.active && t.start && t.finish)
+    .map(t => ({
+      name: t.name || 'Unnamed',
+      finish: t.finish,
+      parentMilestone: t.parentMilestone || 'Unassigned',
+      status: t.status || 'NotStarted',
+      slipDays: Math.max(0, t.slipDays || 0)
+    }));
+
+  const spec = {
+    $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+    data: { values: milestones },
+    mark: { type: 'point', filled: true, size: 130, shape: 'diamond' },
+    encoding: {
+      x: { field: 'finish', type: 'temporal', title: 'Finish Date' },
+      y: { field: 'parentMilestone', type: 'nominal', title: 'Milestone' },
+      color: { field: 'status', type: 'nominal', scale: { scheme: 'set1' } },
+      size: { field: 'slipDays', type: 'quantitative', scale: { range: [100, 300] } },
+      tooltip: [
+        { field: 'name', type: 'nominal', title: 'Task' },
+        { field: 'parentMilestone', type: 'nominal', title: 'Milestone' },
+        { field: 'finish', type: 'temporal', title: 'Finish' },
+        { field: 'status', type: 'nominal' },
+        { field: 'slipDays', type: 'quantitative', title: 'Slip Days' }
+      ]
+    },
+    width: target.offsetWidth - 20,
+    height: 160
+  };
+
+  vegaEmbed(target, spec, { actions: false }).catch(err => console.error('Vega render error:', err));
+}
+
+function renderVisMilestoneOverview() {
+  const target = document.getElementById('visMilestoneOverview');
+  if (!target || !DATA || !DATA.tasks) return;
+
+  // Top overview = OL2 major milestones, one row per milestone
+  const ol2 = DATA.tasks
+    .filter(t => t.outlineLevel === 2 && t.active && t.start && t.finish)
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  if (!ol2.length) {
+    target.innerHTML = '<div style="padding:12px;color:#64748b;font-size:11px">No level-2 milestones found.</div>';
+    return;
+  }
+
+  if (overviewVisTimeline) {
+    try { overviewVisTimeline.destroy(); } catch (_) {}
+    overviewVisTimeline = null;
+  }
+  target.innerHTML = '';
+
+  // One group per OL2 task so each gets its own labelled swimlane
+  const groups = new vis.DataSet(ol2.map(t => ({
+    id: t.uid,
+    content: `<span style="font-size:11px;font-weight:600;white-space:nowrap">${t.name}</span>`
+  })));
+
+  const pctColor = pct => pct >= 75 ? '#16a34a' : pct >= 40 ? '#d97706' : '#2563eb';
+
+  const items = new vis.DataSet(ol2.map(t => {
+    const pct = Math.round(t.percentComplete || 0);
+    const color = pctColor(pct);
+    return {
+      id: t.uid,
+      content: `<span style="font-size:10px;padding:0 4px">${pct}%</span>`,
+      start: new Date(t.start),
+      end: new Date(t.finish),
+      type: 'range',
+      group: t.uid,
+      style: `background:${color};border-color:${color};color:#fff;border-radius:4px`
+    };
+  }));
+
+  const allDates = ol2.flatMap(t => [new Date(t.start), new Date(t.finish)]);
+  const minDate = new Date(Math.min(...allDates));
+  const maxDate = new Date(Math.max(...allDates));
+  // Pad 2 weeks either side
+  minDate.setDate(minDate.getDate() - 14);
+  maxDate.setDate(maxDate.getDate() + 14);
+
+  const options = {
+    margin: { item: 4, axis: 8 },
+    orientation: { axis: 'top', item: 'center' },
+    stack: false,
+    showMajorLabels: true,
+    showMinorLabels: true,
+    zoomMin: 1000 * 60 * 60 * 24 * 14,
+    start: minDate,
+    end: maxDate,
+    height: 140
+  };
+
+  overviewVisTimeline = new vis.Timeline(target, items, groups, options);
+}
+
+function renderModeTabs() {
+  const all = document.getElementById('modeAll');
+  const crit = document.getElementById('modeCritical');
+  const drv = document.getElementById('modeDriver');
+  if (all) all.className = 'mode-btn' + (timelineMode === 'ALL' ? ' active' : '');
+  if (crit) crit.className = 'mode-btn' + (timelineMode === 'CRITICAL' ? ' active' : '');
+  if (drv) drv.className = 'mode-btn' + (timelineMode === 'DRIVER' ? ' active' : '');
+}
+
+function setTimelineMode(mode) {
+  timelineMode = mode;
+  const filter = document.getElementById('viewFilter');
+  if (filter) filter.value = mode;
+  renderModeTabs();
+  renderGantt();
+  renderVisMilestoneOverview();
+  renderNetworkDiagram();
+}
+
+function renderTaskHierarchy() {
+  const container = document.getElementById('taskTree');
+  if (!container || !DATA || !DATA.tasks) return;
+
+  // Build outline number lookup
+  const byOutline = new Map(DATA.tasks.map(t => [t.outlineNumber, t]));
+
+  // Flag20 tasks starting at OL3+ (OL2 go to the top timeline)
+  const flag20Tasks = DATA.tasks.filter(t => t.flag20 === true && t.active && t.outlineLevel >= 3);
+
+  // OL3 tasks = section group headers
+  // OL4+ tasks = items under their OL3 parent
+  const ol3Groups = DATA.tasks
+    .filter(t => t.flag20 === true && t.active && t.outlineLevel === 3)
+    .sort((a, b) => (a.outlineNumber || '').localeCompare(b.outlineNumber || '', undefined, {numeric:true}));
+
+  // Map each OL4+ task to its OL3 parent (first 3 outline segments)
+  const getOl3Key = (outlineNumber) => {
+    const parts = (outlineNumber || '').split('.');
+    return parts.slice(0, 3).join('.');
+  };
+
+  // Group OL4+ tasks under their OL3 parent
+  const tasksByOl3 = new Map();
+  flag20Tasks.filter(t => t.outlineLevel >= 4).forEach(t => {
+    const key = getOl3Key(t.outlineNumber);
+    if (!tasksByOl3.has(key)) tasksByOl3.set(key, []);
+    tasksByOl3.get(key).push(t);
+  });
+
+  let html = '';
+
+  // Also show OL3 items that are not group headers (no children) as plain items
+  for (const g of ol3Groups) {
+    const children = tasksByOl3.get(g.outlineNumber) || [];
+    const pct = g.percentComplete ? Math.round(g.percentComplete) + '%' : '';
+    const isMile = g.milestone ? '◆ ' : '';
+    html += `<div class="tree-item lv2" data-uid="${g.uid}" title="${g.name}">`
+          + `<span class="tree-toggle">${children.length ? '▼' : '—'}</span> `
+          + `${isMile}<strong>${g.name.substring(0, 32)}</strong>`
+          + `<span style="color:var(--muted);font-size:10px;float:right">${pct}</span>`
+          + `</div>`;
+    children
+      .sort((a, b) => (a.outlineNumber || '').localeCompare(b.outlineNumber || '', undefined, {numeric:true}))
+      .forEach(t => {
+        const cls = t.criticalFlag ? ' critical-task' : '';
+        const tPct = t.percentComplete ? Math.round(t.percentComplete) + '%' : '';
+        const tMile = t.milestone ? '◆ ' : '';
+        html += `<div class="tree-item lv3${cls}" data-uid="${t.uid}" title="${t.name}">`
+              + `${tMile}${t.name.substring(0, 30)}`
+              + `<span style="color:var(--muted);font-size:10px;float:right">${tPct}</span>`
+              + `</div>`;
+      });
+  }
+
+  // Any flag20 OL4+ tasks whose OL3 parent is NOT in the flag20 set — show under 'Other'
+  const coveredOl3Keys = new Set(ol3Groups.map(g => g.outlineNumber));
+  const orphans = flag20Tasks.filter(t => t.outlineLevel >= 4 && !coveredOl3Keys.has(getOl3Key(t.outlineNumber)));
+  if (orphans.length) {
+    html += `<div class="tree-item lv2"><span class="tree-toggle">▼</span> <strong>Other</strong></div>`;
+    orphans.forEach(t => {
+      const cls = t.criticalFlag ? ' critical-task' : '';
+      html += `<div class="tree-item lv3${cls}" title="${t.name}">${t.name.substring(0, 30)}</div>`;
+    });
+  }
+
+  container.innerHTML = html || '<div style="color:var(--muted);padding:10px">No onepager tasks found</div>';
+
+  // Wire click handlers on all tree items
+  container.querySelectorAll('.tree-item[data-uid]').forEach(el => {
+    el.addEventListener('click', () => focusTaskInNetwork(el.dataset.uid));
+  });
+}
+
+function renderGantt() {
+  const wrap = document.getElementById('ganttWrap');
+  if (!wrap || !DATA || !DATA.tasks) return;
+
+  const filteredTasks = buildModeRows();
+  if (!filteredTasks.length) {
+    wrap.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted)">No tasks for mode: ' + timelineMode + '</div>';
+    return;
+  }
+
+  try {
+    // Remove old gantt if it exists
+    const oldGantt = document.getElementById('gantt');
+    if (oldGantt && oldGantt.innerHTML) {
+      oldGantt.innerHTML = '';
+    }
+    
+    ganttChart = new Gantt('#gantt', filteredTasks, {
+      view_mode: currentViewMode,
+      date_format: 'YYYY-MM-DD',
+      on_click: (task) => focusTaskInNetwork(task.id)
+    });
+    document.getElementById('ganttInfo').textContent = `Mode: ${timelineMode} · ${filteredTasks.length} tasks`;
+  } catch (err) {
+    console.error('Gantt render error:', err);
+    wrap.innerHTML = '<div style="padding:20px;color:red">Gantt render failed: ' + err.message + '</div>';
+  }
+}
+
+function buildModeRows() {
+  const rows = [];
+
+  if (timelineMode === 'ALL') {
+    DATA.tasks
+      .filter(t => t.flag20 === true && t.active && t.start && t.finish && t.outlineLevel >= 3)
+      .sort((a, b) => new Date(a.finish) - new Date(b.finish))
+      .forEach(t => rows.push({
+        id: t.uid, name: t.name || 'Unnamed',
+        start: t.start, end: t.finish,
+        progress: t.percentComplete || 0, dependencies: '',
+        custom_class: t.milestone ? 'bar-focus' : 'bar-all'
+      }));
+
+  } else if (timelineMode === 'CRITICAL') {
+    // Flag20 OL2+ tasks: critical ones highlighted red, non-critical shown as context
+    DATA.tasks
+      .filter(t => t.flag20 === true && t.active && t.start && t.finish && t.outlineLevel >= 2)
+      .sort((a, b) => new Date(a.start) - new Date(b.start))
+      .forEach(t => {
+        const isCrit = t.criticalFlag || t.cpm?.critical;
+        rows.push({
+          id: t.uid, name: t.name || 'Unnamed',
+          start: t.start, end: t.finish,
+          progress: t.percentComplete || 0, dependencies: '',
+          custom_class: isCrit ? 'bar-critical' : 'bar-context'
+        });
+      });
+
+  } else if (timelineMode === 'DRIVER') {
+    // Critical path tasks + their upstream driver chain (predecessors 2 levels)
+    const byUid = new Map(DATA.tasks.map(t => [t.uid, t]));
+    const keep = new Set(
+      DATA.tasks.filter(t => t.cpm?.critical && !t.summary && t.active).map(t => t.uid)
+    );
+    const queue = [...keep];
+    while (queue.length) {
+      const uid = queue.shift();
+      const t = byUid.get(uid);
+      if (!t) continue;
+      (t.predecessors || []).forEach(p => {
+        if (keep.has(p)) return;
+        const pred = byUid.get(p);
+        if (!pred || pred.summary || !pred.active) return;
+        keep.add(p);
+        queue.push(p);
+      });
+    }
+    [...keep]
+      .map(uid => byUid.get(uid))
+      .filter(t => t && t.start && t.finish)
+      .sort((a, b) => new Date(a.start) - new Date(b.start))
+      .forEach(t => rows.push({
+        id: t.uid, name: t.name || 'Unnamed',
+        start: t.start, end: t.finish,
+        progress: t.percentComplete || 0, dependencies: '',
+        custom_class: t.cpm?.critical ? 'bar-critical' : 'bar-context'
+      }));
+  }
+
+  return rows;
+}
+
+function changeView() {
+  const mode = document.getElementById('viewMode');
+  if (mode) {
+    currentViewMode = mode.value;
+    if (ganttChart) ganttChart.change_view_mode(currentViewMode);
+  }
+}
+
+function focusTaskInNetwork(uid) {
+  const key = String(uid);
+  if (!key || !taskByUid.has(key)) return;
+  // Set as the selected milestone/task for the network diagram
+  selectedCanvasMilestones = new Set([key]);
+  renderNetworkDiagram();
+  // Scroll to network section
+  document.getElementById('layoutBottom')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Highlight clicked item in sidebar
+  document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active-task'));
+  const el = document.querySelector(`.tree-item[data-uid="${uid}"]`);
+  if (el) el.classList.add('active-task');
+}
+
+function renderNetworkDiagram() {
+  const container = document.getElementById('ncGraph');
+  if (!container || !DATA || !DATA.tasks) return;
+  
+  // If no milestones selected, show instruction
+  if (selectedCanvasMilestones.size === 0) {
+    container.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted);padding:20px;text-align:center">
+        <div style="font-size:12px;margin-bottom:12px">No milestones selected</div>
+        <button onclick="openMilestoneSelector()" style="padding:8px 16px;background:#1e3a8a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700">
+          Select Milestones
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  const nodes = [];
+  const edges = [];
+  const seen = new Set();
+  
+  // Get selected task objects (any task, not just milestones)
+  const selectedMilestones = [...selectedCanvasMilestones]
+    .map(uid => taskByUid.get(uid))
+    .filter(m => m);
+
+  if (selectedMilestones.length === 0) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted)">Selected items not found</div>';
+    return;
+  }
+
+  // Add selected tasks to center
+  const centerNodeIds = new Set();
+  selectedMilestones.forEach(m => {
+    const id = String(m.uid);
+    centerNodeIds.add(id);
+    const isMilestone = m.milestone;
+    nodes.push({
+      id: id,
+      label: (m.name || 'Task').substring(0, 30),
+      title: m.name,
+      shape: isMilestone ? 'diamond' : 'box',
+      color: { background: isMilestone ? '#fef2f2' : '#fef9c3', border: isMilestone ? '#dc2626' : '#d97706' },
+      font: { size: 14, bold: true },
+      size: isMilestone ? 30 : 20,
+      borderWidth: 3
+    });
+  });
+
+  // Add upstream tasks (predecessors) - Level 1 and 2
+  const predecessorIds = new Set();
+  function addPredecessors(uid, maxDepth = 2, currentDepth = 0) {
+    if (currentDepth >= maxDepth) return;
+    const task = taskByUid.get(String(uid));
+    if (!task || !task.predecessors) return;
+    
+    task.predecessors.forEach(pred => {
+      if (predecessorIds.has(pred) || centerNodeIds.has(pred)) return;
+      predecessorIds.add(pred);
+      const predTask = taskByUid.get(String(pred));
+      if (predTask && !predTask.summary && predTask.active && predTask.start && predTask.finish) {
+        nodes.push({
+          id: String(pred),
+          label: (predTask.name || '').substring(0, 20),
+          title: predTask.name,
+          shape: 'box',
+          color: { background: '#eff6ff', border: '#3b82f6' },
+          font: { size: 11 }
+        });
+        addPredecessors(pred, maxDepth, currentDepth + 1);
+      }
+    });
+  }
+
+  // Add downstream tasks (successors) - Level 1 and 2
+  const successorIds = new Set();
+  function addSuccessors(uid, maxDepth = 2, currentDepth = 0) {
+    if (currentDepth >= maxDepth) return;
+    const task = taskByUid.get(String(uid));
+    if (!task || !task.successors) return;
+    
+    task.successors.forEach(succ => {
+      if (successorIds.has(succ) || centerNodeIds.has(succ)) return;
+      successorIds.add(succ);
+      const succTask = taskByUid.get(String(succ));
+      if (succTask && !succTask.summary && succTask.active && succTask.start && succTask.finish) {
+        nodes.push({
+          id: String(succ),
+          label: (succTask.name || '').substring(0, 20),
+          title: succTask.name,
+          shape: 'box',
+          color: { background: '#f0fdf4', border: '#16a34a' },
+          font: { size: 11 }
+        });
+        addSuccessors(succ, maxDepth, currentDepth + 1);
+      }
+    });
+  }
+
+  // Collect all predecessors and successors
+  selectedMilestones.forEach(m => {
+    addPredecessors(m.uid);
+    addSuccessors(m.uid);
+  });
+
+  // Add edges
+  const allIds = new Set([...centerNodeIds, ...predecessorIds, ...successorIds]);
+  allIds.forEach(id => {
+    const task = taskByUid.get(String(id));
+    if (task && task.predecessors) {
+      task.predecessors.forEach(pred => {
+        if (allIds.has(pred)) {
+          const key = `${pred}->${id}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            edges.push({ from: String(pred), to: String(id), arrows: 'to', color: { color: '#cbd5e1' } });
+          }
+        }
+      });
+    }
+  });
+
+  if (nodes.length === 0) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted)">No network data for selected milestones</div>';
+    return;
+  }
+
+  try {
+    const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+    const options = {
+      physics: { enabled: true, stabilization: { iterations: 100 } },
+      layout: { 
+        hierarchical: { 
+          enabled: true,
+          direction: 'UD',
+          sortMethod: 'directed'
+        }
+      },
+      interaction: { navigationButtons: true, keyboard: true }
+    };
+    new vis.Network(container, data, options);
+  } catch (err) {
+    console.error('Network render error:', err);
+    container.innerHTML = '<div style="padding:20px;color:red">Network render failed: ' + err.message + '</div>';
+  }
+}
+
+function renderActionItems() {
+  const container = document.getElementById('actionPanelContent');
+  if (!container || !DATA || !DATA.actionItems) return;
+
+  // Use actionItems: Act Now = immediate, At Risk Soon = soon
+  const items = DATA.actionItems
+    .filter(a => a.attentionLane === 'Act Now' || a.attentionLane === 'At Risk Soon')
+    .sort((a, b) => {
+      const order = { 'Act Now': 0, 'At Risk Soon': 1 };
+      return (order[a.attentionLane] || 2) - (order[b.attentionLane] || 2);
+    })
+    .slice(0, 50);
+
+  if (items.length === 0) {
+    container.innerHTML = '<div style="color:var(--muted);padding:10px">No action items</div>';
+    return;
+  }
+
+  const taskMap = taskByUid;
+  let html = '';
+  items.forEach(a => {
+    const task = taskMap.get(String(a.taskId)) || {};
+    const tierClass = a.attentionLane === 'Act Now' ? 'critical' : 'soon';
+    const finish = a.milestoneDate
+      ? new Date(a.milestoneDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : (task.finish ? new Date(task.finish).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—');
+    const label = a.attentionLane === 'Act Now' ? 'ACT NOW' : 'AT RISK';
+    html += `
+      <div class="action-item ${tierClass}">
+        <div style="font-weight:700;font-size:10px;color:${tierClass === 'critical' ? '#dc2626' : '#d97706'}">${label}</div>
+        <div style="font-weight:600;margin:3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${(a.title || '').replace(/"/g,'')}">${a.title || task.name || 'Unknown'}</div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:3px">${a.name || ''}</div>
+        <div style="font-size:10px;color:var(--muted)">Due: ${finish}</div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+// ── MILESTONE SELECTOR ──
+function openMilestoneSelector() {
+  const selector = document.getElementById('milestoneSelector');
+  const backdrop = document.getElementById('milestoneBackdrop');
+  if (selector && backdrop) {
+    pendingMilestoneSelection = new Set(selectedCanvasMilestones);
+    populateMilestoneCheckboxes();
+    selector.style.display = 'block';
+    backdrop.style.display = 'block';
+  }
+}
+
+function closeMilestoneSelector() {
+  const selector = document.getElementById('milestoneSelector');
+  const backdrop = document.getElementById('milestoneBackdrop');
+  if (selector && backdrop) {
+    selector.style.display = 'none';
+    backdrop.style.display = 'none';
+    pendingMilestoneSelection.clear();
+  }
+}
+
+function populateMilestoneCheckboxes() {
+  const container = document.getElementById('milestoneCheckboxes');
+  if (!container || !DATA || !DATA.tasks) return;
+
+  const milestones = DATA.tasks
+    .filter(t => t.milestone && t.active && t.start && t.finish)
+    .sort((a, b) => new Date(a.finish) - new Date(b.finish));
+
+  let html = '';
+  milestones.forEach(m => {
+    const checked = pendingMilestoneSelection.has(String(m.uid)) ? 'checked' : '';
+    const finish = new Date(m.finish).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    html += `
+      <div style="padding:8px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:10px;cursor:pointer" onclick="toggleMilestoneCheckbox(this, event)">
+        <input type="checkbox" value="${m.uid}" ${checked} style="cursor:pointer;width:16px;height:16px" onchange="updatePendingSelection(this)">
+        <div>
+          <div style="font-weight:600;font-size:12px;color:#1f2937">${m.name}</div>
+          <div style="font-size:11px;color:#6b7280">Finish: ${finish} · ${m.parentMilestone || 'Unassigned'}</div>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html || '<div style="padding:20px;text-align:center;color:var(--muted)">No milestones available</div>';
+}
+
+function toggleMilestoneCheckbox(el, evt) {
+  if (evt && evt.target && evt.target.tagName === 'INPUT') return;
+  const checkbox = el.querySelector('input[type="checkbox"]');
+  if (checkbox) {
+    checkbox.checked = !checkbox.checked;
+    updatePendingSelection(checkbox);
+  }
+}
+
+function updatePendingSelection(checkbox) {
+  const uid = String(checkbox.value);
+  if (checkbox.checked) {
+    pendingMilestoneSelection.add(uid);
+  } else {
+    pendingMilestoneSelection.delete(uid);
+  }
+}
+
+function applyMilestoneSelection() {
+  selectedCanvasMilestones = new Set(pendingMilestoneSelection);
+  closeMilestoneSelector();
+  renderNetworkDiagram();
+}
+</script>
+
+</body>
+</html>

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -1001,6 +1002,39 @@ def write_sheet(writer: pd.ExcelWriter, sheet_name: str, df: pd.DataFrame) -> No
     worksheet.auto_filter.ref = worksheet.dimensions
 
 
+def write_workbook_with_retry(
+    workbook_path: Path,
+    write_callback: Any,
+    retries: int = 4,
+    delay_seconds: int = 5,
+) -> None:
+    last_error: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            with pd.ExcelWriter(workbook_path, engine="openpyxl") as writer:
+                write_callback(writer)
+            return
+        except PermissionError as exc:
+            last_error = exc
+        except OSError as exc:
+            if "being used by another process" in str(exc).lower() or "permission denied" in str(exc).lower():
+                last_error = exc
+            else:
+                raise
+
+        if attempt < retries:
+            print(
+                f"[warn] Output workbook is locked ({workbook_path.name}). "
+                f"Retrying in {delay_seconds}s ({attempt}/{retries})..."
+            )
+            time.sleep(delay_seconds)
+
+    raise RuntimeError(
+        f"Could not write workbook '{workbook_path}' after {retries} attempts. "
+        "Close Excel sessions using this file or run the PowerShell wrapper with -ForceCloseExcel."
+    ) from last_error
+
+
 def build_output(results: list[SourceResult], config: dict[str, Any], output_dir: Path, config_path: Path | None = None) -> tuple[Path, Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     workbook_path = output_dir / "Ametek_SAP_S4_Impl_Daily_Report.xlsx"
@@ -1019,7 +1053,7 @@ def build_output(results: list[SourceResult], config: dict[str, Any], output_dir
     changes_df, snapshot_data = change_summary(results, snapshot_path)
     profile_df = source_profile_table(results)
 
-    with pd.ExcelWriter(workbook_path, engine="openpyxl") as writer:
+    def _write_all_sheets(writer: pd.ExcelWriter) -> None:
         write_sheet(writer, "pmo_metrics",         metrics_df)
         write_sheet(writer, "change_summary",       changes_df)
         write_sheet(writer, "source_profile",       profile_df)
@@ -1027,6 +1061,8 @@ def build_output(results: list[SourceResult], config: dict[str, Any], output_dir
         write_sheet(writer, "relationship_rollup",  rollup)
         for result in results:
             write_sheet(writer, f"raw_{result.name}", result.normalized_df)
+
+    write_workbook_with_retry(workbook_path, _write_all_sheets)
 
     summary_path.write_text(narrative_summary(metrics_df, changes_df, config.get("report_name", "Daily Report")), encoding="utf-8")
 
