@@ -13,7 +13,7 @@
       "restore_dir": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\Ametek SAP S4 Daily Report",
       "archive_older_matches": true,
       "duplicates_archive_folder": "archive_dedup",
-      "header_row": 1,
+      "header_row": 0,
       "read_all_sheets": true,
       "required": false,
       "include_sheet_patterns": [
@@ -22,6 +22,32 @@
         "GO[- ]?LIVE",
         "RL"
       ]
+    },
+    {
+      "name": "raid_log_book",
+      "path_glob": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\SAP Implementation Project - Documents\\00 - PMO\\04 - Project Tracking and Reporting\\AMETEK SAP S4 RAID Log*.xlsm",
+      "pick": "latest",
+      "auto_manage_duplicates": true,
+      "restore_latest_from_archive": true,
+      "restore_dir": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\Ametek SAP S4 Daily Report",
+      "archive_older_matches": true,
+      "duplicates_archive_folder": "archive_dedup",
+      "header_row": 1,
+      "read_all_sheets": true,
+      "required": false,
+      "include_sheet_patterns": [
+        "Risk",
+        "Issue",
+        "Action",
+        "Assumption",
+        "Dependenc"
+      ]
+    },
+    {
+      "name": "tasks_mpp",
+      "type": "ms_project",
+      "mpp_path": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\SAP Implementation Project - Documents\\00 - PMO\\02 - Project Planning\\AMETEK SAP S4 Master Project Plan 3ITC May.mpp",
+      "required": false
     }
   ],
   "domains": [
@@ -167,6 +193,246 @@
             "TotalTests": "Count of detail rows by Section + Workstream (+Owner).",
             "PassRatePct": "(TestsPassed / ExecutableTests) * 100 by grouping.",
             "DefectRefs": "Sum of DefectCount by grouping."
+          }
+        }
+      }
+    },
+    {
+      "name": "raid",
+      "enabled": true,
+      "validation_section_title": "RAID Metrics",
+      "builder": "raid",
+      "source_names": [
+        "raid_log_book"
+      ],
+      "high_priority_score_threshold": 12,
+      "aliases": {
+        "record_id": [
+          "ID",
+          "RAID ID",
+          "Risk ID",
+          "Issue ID",
+          "Action ID",
+          "Item ID"
+        ],
+        "raid_type": [
+          "Type",
+          "RAID Type",
+          "Category"
+        ],
+        "task_id": [
+          "Task ID",
+          "WBS",
+          "Unique ID"
+        ],
+        "task_name": [
+          "Title",
+          "Name",
+          "Task Name",
+          "Summary"
+        ],
+        "workstream": [
+          "Directory",
+          "Workstream",
+          "Task Summary Name"
+        ],
+        "owner": [
+          "Owner",
+          "Assigned To",
+          "Action Owner",
+          "Risk Owner",
+          "Issue Owner"
+        ],
+        "status": [
+          "Status",
+          "State",
+          "RAG Status",
+          "Open/Closed",
+          "Current Status",
+          "Item Status"
+        ],
+        "priority": [
+          "Priority",
+          "Severity",
+          "Rank"
+        ],
+        "due_date": [
+          "Due Date",
+          "Target Date",
+          "Action Due Date",
+          "Mitigation Date"
+        ],
+        "logged_by": [
+          "Logged By",
+          "Raised By",
+          "Created By"
+        ],
+        "description": [
+          "Description",
+          "Details",
+          "Risk Description",
+          "Issue Description",
+          "Action Description"
+        ],
+        "mitigation": [
+          "Mitigation",
+          "Response Plan",
+          "Action Plan",
+          "Proposed Action"
+        ],
+        "comments": [
+          "Comments",
+          "Comment",
+          "Latest Comment"
+        ],
+        "notes": [
+          "Notes",
+          "Note",
+          "Remarks"
+        ],
+        "category": [
+          "Category",
+          "Subcategory",
+          "Theme"
+        ],
+        "probability": [
+          "Probability",
+          "Likelihood"
+        ],
+        "impact": [
+          "Impact",
+          "Severity Impact"
+        ],
+        "risk_score": [
+          "Risk Score",
+          "Exposure",
+          "Score",
+          "Risk Exposure"
+        ],
+        "defect_id": [
+          "Defect ID",
+          "Linked Defect ID"
+        ]
+      },
+      "validation": {
+        "pq_docs": {
+          "PQ_RAID_Source": {
+            "purpose": "Raw ingest for RAID log workbook and included RAID sheets.",
+            "dependencies": "raid_log_book source, include_sheet_patterns, header row",
+            "notes": "Reference/lineage table for traceability and audit of source rows."
+          },
+          "PQ_RAID_Detail": {
+            "purpose": "Canonical row-level RAID table with normalized type/status/priority and KPI helper flags.",
+            "dependencies": "PQ_RAID_Source + alias mapping + RAID type inference",
+            "notes": "Feeds RAID summary/workstream rollups and dashboard consumption."
+          },
+          "PQ_RAID_Summary": {
+            "purpose": "ALL-level and type-level RAID KPI rollup.",
+            "dependencies": "PQ_RAID_Detail",
+            "notes": "Primary validation rollup for open, overdue, and high-priority load."
+          },
+          "PQ_RAID_Workstream": {
+            "purpose": "RAID KPI drilldown by type/workstream/owner.",
+            "dependencies": "PQ_RAID_Detail",
+            "notes": "Supports leadership review and owner accountability views."
+          }
+        },
+        "metric_logic": {
+          "PQ_RAID_Detail": {
+            "RaidType": "Inferred from RAID type field plus source sheet/name text into RISK/ISSUE/ACTION/ASSUMPTION/DEPENDENCY/OTHER.",
+            "IsOpen": "Status does not indicate closed/resolved/complete/done/mitigated/cancelled.",
+            "IsClosed": "Status indicates closed/resolved/complete/done/mitigated/cancelled.",
+            "IsOverdue": "IsOpen AND DueDate is before today.",
+            "IsDueNext14": "IsOpen AND DueDate is between today and today+14 days.",
+            "IsHighPriority": "Priority text contains critical/high/p1/sev1 OR RiskScore >= high_priority_score_threshold."
+          },
+          "PQ_RAID_Summary": {
+            "TotalItems": "Count of detail rows by RaidType and ALL.",
+            "OpenItems": "Sum(IsOpen) by grouping.",
+            "ClosedItems": "Sum(IsClosed) by grouping.",
+            "OverdueItems": "Sum(IsOverdue) by grouping.",
+            "DueNext14": "Sum(IsDueNext14) by grouping.",
+            "HighPriorityItems": "Sum(IsHighPriority) by grouping."
+          },
+          "PQ_RAID_Workstream": {
+            "TotalItems": "Count of detail rows by RaidType + Workstream (+Owner).",
+            "OpenItems": "Sum(IsOpen) by grouping.",
+            "OverdueItems": "Sum(IsOverdue) by grouping.",
+            "HighPriorityItems": "Sum(IsHighPriority) by grouping."
+          }
+        }
+      }
+    },
+    {
+      "name": "tasks",
+      "enabled": true,
+      "validation_section_title": "Tasks/Project Tracking Metrics",
+      "builder": "tasks",
+      "mpp_path": "C:\\Users\\jsw73\\OneDrive - AMETEK Inc\\SAP Implementation Project - Documents\\00 - PMO\\02 - Project Planning\\AMETEK SAP S4 Master Project Plan 3ITC May.mpp",
+      "workstream_field": "Text3",
+      "workstream_field_candidates": [
+        "Text3",
+        "Text1",
+        "Text2",
+        "Text4",
+        "Text5"
+      ],
+      "validation": {
+        "pq_docs": {
+          "PQ_Task_Source": {
+            "purpose": "Raw export from MS Project .mpp file with all task hierarchy levels.",
+            "dependencies": "tasks_mpp source path",
+            "notes": "Complete task list (levels 1-7) for audit and hierarchy reconstruction."
+          },
+          "PQ_Task_Detail": {
+            "purpose": "Canonical row-level execution task table excluding Close4D milestone and summary/milestone rows.",
+            "dependencies": "PQ_Task_Source + execution-task filtering + status/progress calculation + workstream custom field",
+            "notes": "Counts execution tasks only. Workstream is sourced from configured MS Project workstream field (Text1 by default)."
+          },
+          "PQ_Task_Summary": {
+            "purpose": "Workstream-level and ALL-level task KPI rollup.",
+            "dependencies": "PQ_Task_Detail",
+            "notes": "Primary validation rollup for open, in-progress, overdue, and immediate-attention metrics."
+          },
+          "PQ_Task_Workstream": {
+            "purpose": "Task KPI drilldown by workstream and status.",
+            "dependencies": "PQ_Task_Detail",
+            "notes": "Supports status-based filtering and workstream accountability views."
+          }
+        },
+        "metric_logic": {
+          "PQ_Task_Detail": {
+            "TaskID": "Unique task ID from MS Project.",
+            "OutlineLevel": "Original hierarchy level from MS Project.",
+            "Workstream": "Read directly from configured MS Project workstream field (Text1 by default).",
+            "IsExecutionTask": "TRUE for rows counted after excluding Close4D, summary tasks, milestone tasks, and blank task names.",
+            "IsSummaryTask": "Original MS Project summary flag for the task.",
+            "IsMilestoneTask": "Original MS Project milestone flag for the task.",
+            "IsClose4D": "TRUE when task name contains Close4D pattern.",
+            "Status": "Computed from PercentComplete: Complete (100%), In Progress (0-99% + progress), Overdue (past finish + not 100%), Not Started.",
+            "IsOpen": "TRUE if PercentComplete < 100.",
+            "IsComplete": "TRUE if PercentComplete = 100.",
+            "IsInProgress": "TRUE if PercentComplete > 0 AND < 100.",
+            "IsOverdue": "TRUE if IsOpen AND FinishDate < today.",
+            "IsDueNext14": "TRUE if IsOpen AND FinishDate between today and today+14 days.",
+            "IsImmediateAttention": "TRUE if Overdue OR (DueNext7 AND InProgress) OR (InProgress AND Overdue).",
+            "Reason": "Text explanation for immediate attention inclusion (e.g., 'Overdue', 'Due Soon (In Progress)', 'Low Progress')."
+          },
+          "PQ_Task_Summary": {
+            "TotalTasks": "Count of detail rows by workstream and ALL.",
+            "OpenTasks": "Sum(IsOpen) by grouping.",
+            "CompleteTasks": "Sum(IsComplete) by grouping.",
+            "InProgressTasks": "Sum(IsInProgress) by grouping.",
+            "OverdueTasks": "Sum(IsOverdue) by grouping.",
+            "DueNext14": "Sum(IsDueNext14) by grouping.",
+            "ImmediateAttention": "Sum(IsImmediateAttention) by grouping."
+          },
+          "PQ_Task_Workstream": {
+            "TotalTasks": "Count of detail rows by Workstream + Status.",
+            "OpenTasks": "Sum(IsOpen) by grouping.",
+            "InProgressTasks": "Sum(IsInProgress) by grouping.",
+            "OverdueTasks": "Sum(IsOverdue) by grouping.",
+            "ImmediateAttention": "Sum(IsImmediateAttention) by grouping."
           }
         }
       }
